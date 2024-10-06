@@ -4,6 +4,10 @@ void disabled(){}
 void competition_initialize(){}
 void autonomous(){}
 
+template <typename T> int sgn(T val){
+    return (T(0) < val) - (val < T(0));
+}
+
 void serialRead(void* params){
     vexGenericSerialEnable(SERIALPORT - 1, 0);
     vexGenericSerialBaudrate(SERIALPORT - 1, 115200);
@@ -55,7 +59,7 @@ void brake(){
     rlA.brake();
     llB.brake();
     rlB.brake();
-    pros::delay(2);
+    pros::delay(1);
 }
 
 double apply_deadband(double value){
@@ -108,10 +112,6 @@ double getAngle(int x, int y){
     }
 }
 
-template <typename T> int sgn(T val){
-    return (T(0) < val) - (val < T(0));
-}
-
 double closestAngle(double a, double b)
 {
 	double dir = std::fmod(b, 360.0) - std::fmod(a, 360.0);
@@ -134,11 +134,11 @@ double wrapAngle(double angle){
 void swerveTranslation(){
 	while(true){
 		double translation_speed = sqrt(leftY * leftY + leftX * leftX);
-		double wheel_target_angle = -getAngle(leftY, leftX) * TO_DEGREES;
-		double rotation = -rightX;
+		double wheel_target_angle = getAngle(leftY, leftX) * TO_DEGREES;
+		rotational = bound_value(rightX * SCALING_FACTOR);
 
-		left_wheel_speed = translation_speed + rotation;
-		right_wheel_speed = translation_speed - rotation;
+		left_wheel_speed = translation_speed;
+		right_wheel_speed = translation_speed;
 
 		left_wheel_speed = bound_value(left_wheel_speed * SCALING_FACTOR);
 		right_wheel_speed = bound_value(right_wheel_speed * SCALING_FACTOR);
@@ -167,7 +167,7 @@ void swerveTranslation(){
 			}
 
 			if (abs(setpointAngleR) <= abs(setpointAngleFlippedR)){
-                if(left_wheel_speed > 0){
+                if(right_wheel_speed < 0){
                     right_wheel_speed = -right_wheel_speed;
                 }
 				target_angleR = (right_sensor_angle + setpointAngleR);
@@ -179,7 +179,7 @@ void swerveTranslation(){
 				target_angleR = (right_sensor_angle + setpointAngleFlippedR);
 			}
 		}
-		pros::Task::delay(5);
+		pros::Task::delay(6);
 	}
 }
 
@@ -210,19 +210,19 @@ void setWheelAngle(){
 		left_turn_speed = left_motor_speed;
 		right_turn_speed = right_motor_speed;
 
-		if(fabs(left_error) <= 2.0){
+		if(fabs(left_error) <= 1.0){
 			left_turn_speed = 0.0;
 			left_integral = 0.0;
 			left_error = 0.0;
 			left_derivative = 0.0;
 		}
-		if(fabs(right_error) <= 2.0){
+		if(fabs(right_error) <= 1.0){
 			right_turn_speed = 0.0;
 			right_integral = 0.0;
 			right_error = 0.0;
 			right_derivative = 0.0;
 		}
-		pros::Task::delay(5);
+		pros::Task::delay(6);
 	}
 }
 
@@ -292,7 +292,7 @@ void goalIntake(){
             intakeLower.move(0);
             intakeUpper.move(0);
         }
-        pros::Task::delay(15);
+        pros::Task::delay(25);
 	}
 }
 
@@ -332,19 +332,31 @@ void initialize(){
 }
 
 void opcontrol(){
+    bool isLeftFlipped = false;  // Track left motor flip state
+    bool isRightFlipped = false; // Track right motor flip state
 	while(true){
 		leftX = apply_deadband(master.get_analog(ANALOG_LEFT_X));
         leftY = apply_deadband(master.get_analog(ANALOG_LEFT_Y));
         rightX = apply_deadband(master.get_analog(ANALOG_RIGHT_X));
+
 		if(master.get_digital_new_press(DIGITAL_X)) liftEnable = !liftEnable;
-        luA.move_velocity(-left_wheel_speed - left_turn_speed);
-        llA.move_velocity(-left_wheel_speed + left_turn_speed);
-        ruA.move_velocity(right_wheel_speed - right_turn_speed);
-        rlA.move_velocity(right_wheel_speed + right_turn_speed);
-        luB.move_velocity(-left_wheel_speed - left_turn_speed);
-        llB.move_velocity(-left_wheel_speed + left_turn_speed);
-        ruB.move_velocity(right_wheel_speed - right_turn_speed);
-        rlB.move_velocity(right_wheel_speed + right_turn_speed);
+
+        double adjustedRotational = rotational;
+        if (isLeftFlipped) {
+            adjustedRotational = -adjustedRotational;
+        }
+        if (isRightFlipped) {
+            adjustedRotational = -adjustedRotational;
+        }
+
+        luA.move_velocity(-left_wheel_speed - left_turn_speed - adjustedRotational);
+        llA.move_velocity(-left_wheel_speed + left_turn_speed - adjustedRotational);
+        ruA.move_velocity(right_wheel_speed - right_turn_speed - adjustedRotational);
+        rlA.move_velocity(right_wheel_speed + right_turn_speed - adjustedRotational);
+        luB.move_velocity(-left_wheel_speed - left_turn_speed - adjustedRotational);
+        llB.move_velocity(-left_wheel_speed + left_turn_speed - adjustedRotational);
+        ruB.move_velocity(right_wheel_speed - right_turn_speed - adjustedRotational);
+        rlB.move_velocity(right_wheel_speed + right_turn_speed - adjustedRotational);
 
 		pros::delay(15);
 	}

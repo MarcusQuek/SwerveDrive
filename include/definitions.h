@@ -8,7 +8,7 @@
 #include "api.h"
 
 #define LEFT_UPPER_BEVEL_MOTOR_1 15
-#define LEFT_UPPER_BEVEL_MOTOR_2 12
+#define LEFT_UPPER_BEVEL_MOTOR_2 12 
 #define LEFT_LOWER_BEVEL_MOTOR_1 1
 #define LEFT_LOWER_BEVEL_MOTOR_2 2
 #define RIGHT_UPPER_BEVEL_MOTOR_1 20
@@ -78,24 +78,25 @@ double right_wheel_speed = 0.0;
 
 
 //SetWheelAngle
-const double lkP = 2.70;
+const double lkP = 1.8;
 const double lkI = 0.0;
-const double lkD = 0.13;
+const double lkD = 0.09;
 
-const double rkP = 2.70;
+const double rkP = 1.8;
 const double rkI = 0.0;
-const double rkD = 0.13;
+const double rkD = 0.09;
 
 double target_angle = 0.0;
 double target_angleL = 0.0;
 double target_angleR = 0.0;
 double left_turn_speed = 0.0;
 double right_turn_speed = 0.0;
+double rotational = 0.0;
 
 //MogoLift
 const double mkP = 0.88;
-const double mkI = 0.0;
-const double mkD = 1.78;
+const double mkI = 0.0; 
+const double mkD = 1.79;
 
 int liftTarget = 0;
 bool liftEnable = false;
