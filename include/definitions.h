@@ -100,3 +100,6 @@ const double mkD = 1.79;
 
 int liftTarget = 0;
 bool liftEnable = false;
+
+bool isLeftFlipped = false;
+bool isRightFlipped = false;

@@ -137,6 +137,10 @@ void swerveTranslation(){
 		double wheel_target_angle = getAngle(leftY, leftX) * TO_DEGREES;
 		rotational = bound_value(rightX * SCALING_FACTOR);
 
+        if (fabs(leftY) < 0.1){
+            wheel_target_angle += 5.0;
+        }
+
 		left_wheel_speed = translation_speed;
 		right_wheel_speed = translation_speed;
 
@@ -156,12 +160,14 @@ void swerveTranslation(){
 			if (abs(setpointAngleL) <= abs(setpointAngleFlippedL)){
                 if(left_wheel_speed < 0){
                     left_wheel_speed = -left_wheel_speed;
+                    isLeftFlipped = false;
                 }
 				target_angleL = (left_sensor_angle + setpointAngleL);
 			}
 			else{
                 if(left_wheel_speed > 0){
                     left_wheel_speed = -left_wheel_speed;
+                    isLeftFlipped = true;
                 }
 				target_angleL = (left_sensor_angle + setpointAngleFlippedL);
 			}
@@ -169,12 +175,14 @@ void swerveTranslation(){
 			if (abs(setpointAngleR) <= abs(setpointAngleFlippedR)){
                 if(right_wheel_speed < 0){
                     right_wheel_speed = -right_wheel_speed;
+                    isRightFlipped = false;
                 }
 				target_angleR = (right_sensor_angle + setpointAngleR);
 			}
 			else{
                 if(right_wheel_speed > 0){
                     right_wheel_speed = -right_wheel_speed;
+                    isRightFlipped = false;
                 }
 				target_angleR = (right_sensor_angle + setpointAngleFlippedR);
 			}
@@ -332,8 +340,6 @@ void initialize(){
 }
 
 void opcontrol(){
-    bool isLeftFlipped = false;  // Track left motor flip state
-    bool isRightFlipped = false; // Track right motor flip state
 	while(true){
 		leftX = apply_deadband(master.get_analog(ANALOG_LEFT_X));
         leftY = apply_deadband(master.get_analog(ANALOG_LEFT_Y));
@@ -341,22 +347,14 @@ void opcontrol(){
 
 		if(master.get_digital_new_press(DIGITAL_X)) liftEnable = !liftEnable;
 
-        double adjustedRotational = rotational;
-        if (isLeftFlipped) {
-            adjustedRotational = -adjustedRotational;
-        }
-        if (isRightFlipped) {
-            adjustedRotational = -adjustedRotational;
-        }
-
-        luA.move_velocity(-left_wheel_speed - left_turn_speed - adjustedRotational);
-        llA.move_velocity(-left_wheel_speed + left_turn_speed - adjustedRotational);
-        ruA.move_velocity(right_wheel_speed - right_turn_speed - adjustedRotational);
-        rlA.move_velocity(right_wheel_speed + right_turn_speed - adjustedRotational);
-        luB.move_velocity(-left_wheel_speed - left_turn_speed - adjustedRotational);
-        llB.move_velocity(-left_wheel_speed + left_turn_speed - adjustedRotational);
-        ruB.move_velocity(right_wheel_speed - right_turn_speed - adjustedRotational);
-        rlB.move_velocity(right_wheel_speed + right_turn_speed - adjustedRotational);
+        luA.move_velocity(-left_wheel_speed - left_turn_speed - (isLeftFlipped ? -rotational : rotational));
+        llA.move_velocity(-left_wheel_speed + left_turn_speed - (isLeftFlipped ? -rotational : rotational));
+        ruA.move_velocity(right_wheel_speed - right_turn_speed - (isRightFlipped ? -rotational : rotational));
+        rlA.move_velocity(right_wheel_speed + right_turn_speed - (isRightFlipped ? -rotational : rotational));
+        luB.move_velocity(-left_wheel_speed - left_turn_speed - (isLeftFlipped ? -rotational : rotational));
+        llB.move_velocity(-left_wheel_speed + left_turn_speed - (isLeftFlipped ? -rotational : rotational));
+        ruB.move_velocity(right_wheel_speed - right_turn_speed - (isRightFlipped ? -rotational : rotational));
+        rlB.move_velocity(right_wheel_speed + right_turn_speed - (isRightFlipped ? -rotational : rotational));
 
 		pros::delay(15);
 	}
