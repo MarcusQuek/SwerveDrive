@@ -109,11 +109,11 @@ double right_wheel_speed = 0.0;
 //SetWheelAngle
 bool setAngle = false;
 
-const double lkP = 3.1;
+const double lkP = 2.1;
 const double lkI = 0.0;
 const double lkD = 0.0;
 
-const double rkP = 3.1;
+const double rkP = 2.1;
 const double rkI = 0.0;
 const double rkD = 0.0;
 

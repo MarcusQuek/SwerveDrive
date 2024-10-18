@@ -151,7 +151,7 @@ void swerveTranslation(){
 
 		left_wheel_speed = bound_value(left_wheel_speed * SCALING_FACTOR);
 		right_wheel_speed = bound_value(right_wheel_speed * SCALING_FACTOR);
-
+    
 		double left_sensor_angle = getNormalizedSensorAngle(left_rotation_sensor);
         double right_sensor_angle = getNormalizedSensorAngle(right_rotation_sensor);
 
@@ -223,13 +223,13 @@ void setWheelAngle(){
 		left_turn_speed = left_motor_speed;
 		right_turn_speed = right_motor_speed;
 
-		if(fabs(left_error) <= 2.0){
+		if(fabs(left_error) <= 3.0){
 			left_turn_speed = 0.0;
 			left_integral = 0.0;
 			left_error = 0.0;
 			left_derivative = 0.0;
 		}
-		if(fabs(right_error) <= 2.0){
+		if(fabs(right_error) <= 3.0){
 			right_turn_speed = 0.0;
 			right_integral = 0.0;
 			right_error = 0.0;
@@ -344,7 +344,7 @@ void moveBase(){
             ruB.move_velocity(-right_turn_speed);
             rlB.move_velocity(right_turn_speed);
         }
-        pros::Task::delay(5);
+        pros::Task::delay(4);
     }
 }
 
