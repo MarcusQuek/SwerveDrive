@@ -109,9 +109,9 @@ vector3D normalizeJoystick(int x_in, int y_in){
     double length = sqrt(x_in*x_in*1.0+y_in*y_in*1.0);
     //use CSC or SEC as required
     if((angle>45.0  && angle< 135.0) || (angle<-45.0 && angle> -135.0)){
-        scaleLength = 1/sin(angle) * length;
+        scaleLength = 1/sin(angle) * 127.0;
     }else{
-        scaleLength = 1/cos(angle) * length;
+        scaleLength = 1/cos(angle) * 127.0;
     }
     scaleLength = scaleLength-DEADBAND;
     magnitude = length-DEADBAND/scaleLength-DEADBAND;
@@ -122,8 +122,7 @@ vector3D normalizeJoystick(int x_in, int y_in){
 
 vector3D normalizeRotation(int x_in){
     double scaleLength = 127.0-DEADBAND;
-    scaleLength = scaleLength-DEADBAND;
-    double value = (abs(x_in)-DEADBAND)/scaleLength-DEADBAND;
+    double value = (abs(x_in)-DEADBAND)/scaleLength;
     if(x_in<0){
         value = value * -1.0;
     }
@@ -177,6 +176,9 @@ void moveBase(){
         v_right_velocity = SPEED_TO_RPM* TRANSLATE_RATIO* v_right.norm();
         v_left_velocity = SPEED_TO_RPM* TRANSLATE_RATIO* v_left.norm();
         v_left_direction = atan2(v_left.y,v_left.x);
+
+        pros::lcd::print(2, "%.1f, %.1f, %.1f", v_left_direction, left_angle, v_left_velocity);
+        pros::lcd::print(3, "%.1f, %.1f, %.1f", v_right_direction, right_angle, v_right_velocity);
 
         l_p_error = l_error;
         r_p_error = r_error;
