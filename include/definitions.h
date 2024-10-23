@@ -96,7 +96,7 @@ extern "C" int32_t vexGenericSerialTransmit( uint32_t index, uint8_t *buffer, in
 //Controllers
 int leftX = 0, leftY = 0, rightX = 0;
 const double DEADBAND = 8.0;
-const double MAX_RPM = 600.0;
+const double MAX_RPM = 450.0;
 const double SCALING_FACTOR = MAX_RPM / 127.0;
 const double TO_DEGREES = (180.0 / M_PI);
 const double TO_RADIANS = (M_PI / 180.0);
@@ -109,17 +109,17 @@ double right_wheel_speed = 0.0;
 //SetWheelAngle
 bool setAngle = false;
 
-const double lkP = 2.1;
+const double lkP = 1.1;
 const double lkI = 0.0;
 const double lkD = 0.0;
 
-const double rkP = 2.1;
+const double rkP = 1.1;
 const double rkI = 0.0;
 const double rkD = 0.0;
 
-double target_angle = 1.5;
-double target_angleL = 1.5;
-double target_angleR = 1.5;
+double target_angle = 0.0;
+double target_angleL = 0.0;
+double target_angleR = 0.0;
 double left_turn_speed = 0.0;
 double right_turn_speed = 0.0;
 double rotational = 0.0;

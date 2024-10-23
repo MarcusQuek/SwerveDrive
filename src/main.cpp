@@ -3,6 +3,7 @@
 void disabled(){}
 void competition_initialize(){}
 
+//Function to determine sign of a integer variable, returns bool
 template <typename T> int sgn(T val){
     return (T(0) < val) - (val < T(0));
 }
@@ -62,18 +63,21 @@ void brake(){
     pros::delay(1);
 }
 
+//Sets a deadzone for joystick inputs, defined radius is the DEADBAND constant
 double apply_deadband(double value){
     return (fabs(value) > DEADBAND) ? value : 0.0;
 }
 
+//Sets a hard capped limit for motor RPM
 double bound_value(double value){
     if (value > MAX_RPM) return MAX_RPM;
     if (value < -MAX_RPM) return -MAX_RPM;
     return value;
 }
 
+//Converts rotational sensor readings into degrees and bounds it between -180 to 180
 double getNormalizedSensorAngle(pros::Rotation &sensor){
-    double angle = sensor.get_angle() / 100.0; // Convert from centidegrees to degrees
+    double angle = sensor.get_angle() / 100.0; //Convert from centidegrees to degrees
 
     if (angle < -180)
         angle += 360;
@@ -83,6 +87,7 @@ double getNormalizedSensorAngle(pros::Rotation &sensor){
     return angle;
 }
 
+//COME BACK BROOOOOOOO, GOT BUG
 double getAngle(int x, int y){
     double a = std::atan2(std::abs(y), std::abs(x));
 
@@ -112,12 +117,13 @@ double getAngle(int x, int y){
     }
 }
 
-double closestAngle(double a, double b)
+double closestAngle(double current_angle, double target_angle)
 {
-	double dir = std::fmod(b, 360.0) - std::fmod(a, 360.0);
+    //dir gives the angle from -180 to 180 degrees for the latest wheel angle
+	double dir = std::fmod(current_angle, 360.0) - std::fmod(target_angle, 360.0);
 
 	if (abs(dir) > 180.0)
-		dir = -(sgn(dir) * 360.0) + dir;
+		dir = -(sgn(dir) * 360.0) + dir; //flagged, this if statement is just a redundant implementation of wrapAngle(dir)
 
 	return dir;
 }
@@ -135,10 +141,12 @@ void swerveTranslation(){
 	while(true){
 		double translation_speed = sqrt(leftY * leftY + leftX * leftX);
 		double wheel_target_angle = -getAngle(leftY, leftX) * TO_DEGREES;
-		rotational = bound_value(rightX * SCALING_FACTOR);
+		rotational = bound_value(rightX * SCALING_FACTOR); //currently as of 22.10.24 2000hrs the rotation functionality does not account for the fact that the effective width of the base changes when the swerve wheels change angle
         rotationalL = rotational;
         rotationalR = rotational;
 
+        //Kicks in only when rotational joystick (right) is being used and when both wheels are 90degs
+        //forces the wheels to not be collinear so that effective base width is nonzero and rotation can happen
         if(abs(leftY) < 16 && leftX < 0 && fabs(rotational) > 0){
             wheel_target_angle -= 25.0;
         }
@@ -149,11 +157,14 @@ void swerveTranslation(){
 		left_wheel_speed = translation_speed;
 		right_wheel_speed = translation_speed;
 
+        //Converts joystick input reading (-127 to 127) to motor RPM (-600 to 600) via a scaling factor
 		left_wheel_speed = bound_value(left_wheel_speed * SCALING_FACTOR);
 		right_wheel_speed = bound_value(right_wheel_speed * SCALING_FACTOR);
     
+        //converts to degrees and bounds the angle from -180 to 180
 		double left_sensor_angle = getNormalizedSensorAngle(left_rotation_sensor);
         double right_sensor_angle = getNormalizedSensorAngle(right_rotation_sensor);
+
 
 		double setpointAngleL = closestAngle(left_sensor_angle, wheel_target_angle);
 		double setpointAngleFlippedL = closestAngle(left_sensor_angle, wheel_target_angle + 180.0);
@@ -162,6 +173,7 @@ void swerveTranslation(){
 		double setpointAngleFlippedR = closestAngle(right_sensor_angle, wheel_target_angle + 180.0);
 
 		if(translation_speed > 0.0){
+
 			if (abs(setpointAngleL) <= abs(setpointAngleFlippedL)){
                 if(left_wheel_speed < 0.0){
                     left_wheel_speed = -left_wheel_speed;
@@ -192,10 +204,11 @@ void swerveTranslation(){
 				target_angleR = (right_sensor_angle + setpointAngleFlippedR);
 			}
 		}
-		pros::Task::delay(5);
+		pros::Task::delay(4);
 	}
 }
 
+//Pivots the wheels to its intended target angle
 void setWheelAngle(){
 	double left_previous_error = 0.0;
 	double right_previous_error = 0.0;
@@ -204,6 +217,8 @@ void setWheelAngle(){
 	while(true){
 		double left_current_angle = getNormalizedSensorAngle(left_rotation_sensor);
 		double right_current_angle = getNormalizedSensorAngle(right_rotation_sensor);
+        pros::lcd::print(4, "leftA:%lf", left_current_angle);
+        pros::lcd::print(5, "rightA:%lf", right_current_angle);
 
 		double left_error = wrapAngle(target_angleL - left_current_angle);
         double right_error = wrapAngle(target_angleR - right_current_angle);
@@ -223,19 +238,19 @@ void setWheelAngle(){
 		left_turn_speed = left_motor_speed;
 		right_turn_speed = right_motor_speed;
 
-		if(fabs(left_error) <= 3.0){
+		if(fabs(left_error) <= 5.0){
 			left_turn_speed = 0.0;
 			left_integral = 0.0;
 			left_error = 0.0;
 			left_derivative = 0.0;
 		}
-		if(fabs(right_error) <= 3.0){
+		if(fabs(right_error) <= 5.0){
 			right_turn_speed = 0.0;
 			right_integral = 0.0;
 			right_error = 0.0;
 			right_derivative = 0.0;
 		}
-		pros::Task::delay(1);
+		pros::Task::delay(4);
 	}
 }
 
@@ -310,39 +325,101 @@ void goalIntake(){
 
 void moveBase(){
     while(true){
+        //this case handles rotation plus translation simultaneously
         if(fabs(left_wheel_speed) > 0.0 && fabs(right_wheel_speed) > 0.0){
             std::cout << left_wheel_speed << std::endl;
             std::cout << right_wheel_speed << std::endl;
-            luA.move_velocity(left_wheel_speed - left_turn_speed + rotational);
-            llA.move_velocity(left_wheel_speed + left_turn_speed + rotational);
-            ruA.move_velocity(right_wheel_speed - right_turn_speed - rotational);
-            rlA.move_velocity(right_wheel_speed + right_turn_speed - rotational);
-            luB.move_velocity(left_wheel_speed - left_turn_speed + rotational);
-            llB.move_velocity(left_wheel_speed + left_turn_speed + rotational);
-            ruB.move_velocity(right_wheel_speed - right_turn_speed - rotational);
-            rlB.move_velocity(right_wheel_speed + right_turn_speed - rotational);
+            //Does not tally with the math, all translational speeds should be scaled by 3
+            double lu = 3*left_wheel_speed - left_turn_speed + rotational;
+            double ll = 3*left_wheel_speed + left_turn_speed + rotational;
+            double ru = 3*right_wheel_speed - right_turn_speed - rotational;
+            double rl = 3*right_wheel_speed + right_turn_speed - rotational;
+
+            //check if move_velocity is going to cap any of our motor motions, and if it will, 
+            //then we need to scale all motions down enough such that move_velocity doesnt cap them, 
+            //so that relative proportions of the motor motions is still the desired proportion even if the absolute amounts are scaled down.
+            if(abs(lu) > 600 || abs(ll) > 600 || abs(ru) > 600 || abs(rl) > 600)
+            {
+                double max = lu;
+                if(ll > max)
+                    max = ll;
+                if(ru > max)
+                    max = ru;
+                if(rl > max)
+                    max = rl;
+                double safetyScalingFactor = max / 600;
+                lu = lu * safetyScalingFactor;
+                ll = ll * safetyScalingFactor;
+                ru = ru * safetyScalingFactor;
+                rl = rl * safetyScalingFactor;
+            }
+            luA.move_velocity(lu);
+            luB.move_velocity(lu);
+
+            llA.move_velocity(ll);
+            llB.move_velocity(ll);
+
+            ruA.move_velocity(ru);
+            ruB.move_velocity(ru);
+
+            rlA.move_velocity(rl);
+            rlB.move_velocity(rl);
+            pros::lcd::print(6,"LEFT WHEEL AND RIGHT WHEEL");
         }
+        //for POINT TURNS, so we have to force the wheels to be at zero degrees because we have bling wheels
         else if(fabs(left_wheel_speed) <= 2.0 && fabs(rotational) > 0.0){
             target_angleL = 0.0;
             target_angleR = 0.0;
-            luA.move_velocity(-left_turn_speed + rotational);
-            llA.move_velocity(left_turn_speed + rotational);
-            ruA.move_velocity(-right_turn_speed - rotational);
-            rlA.move_velocity(right_turn_speed - rotational);
-            luB.move_velocity(-left_turn_speed + rotational);
-            llB.move_velocity(left_turn_speed + rotational);
-            ruB.move_velocity(-right_turn_speed - rotational);
-            rlB.move_velocity(right_turn_speed - rotational);
+            double lu = -left_turn_speed + rotational;
+            double ll = left_turn_speed + rotational;
+            double ru = -right_turn_speed - rotational;
+            double rl = right_turn_speed - rotational;
+
+            //check if move_velocity is going to cap any of our motor motions, and if it will, 
+            //then we need to scale all motions down enough such that move_velocity doesnt cap them, 
+            //so that relative proportions of the motor motions is still the desired proportion even if the absolute amounts are scaled down.
+            if(abs(lu) > 600 || abs(ll) > 600 || abs(ru) > 600 || abs(rl) > 600)
+            {
+                double max = lu;
+                if(ll > max)
+                    max = ll;
+                if(ru > max)
+                    max = ru;
+                if(rl > max)
+                    max = rl;
+                double safetyScalingFactor = max / 600;
+                lu = lu * safetyScalingFactor;
+                ll = ll * safetyScalingFactor;
+                ru = ru * safetyScalingFactor;
+                rl = rl * safetyScalingFactor;
+            }
+            luA.move_velocity(lu);
+            luB.move_velocity(lu);
+
+            llA.move_velocity(ll);
+            llB.move_velocity(ll);
+
+            ruA.move_velocity(ru);
+            ruB.move_velocity(ru);
+
+            rlA.move_velocity(rl);
+            rlB.move_velocity(rl);
+            pros::lcd::print(6,"NO TRANSLATE. ROTATE");
         }
+        //this case handles wheel pivoting only
         else{
-            luA.move_velocity(-left_turn_speed);
-            llA.move_velocity(left_turn_speed);
-            ruA.move_velocity(-right_turn_speed);
-            rlA.move_velocity(right_turn_speed);
-            luB.move_velocity(-left_turn_speed);
-            llB.move_velocity(left_turn_speed);
-            ruB.move_velocity(-right_turn_speed);
-            rlB.move_velocity(right_turn_speed);
+            luA.move_velocity(0);
+            luB.move_velocity(0);
+
+            llA.move_velocity(0);
+            llB.move_velocity(0);
+
+            ruA.move_velocity(0);
+            ruB.move_velocity(0);
+
+            rlA.move_velocity(0);
+            rlB.move_velocity(0);
+            pros::lcd::print(6,"ELSE CASE ONLY LEH");
         }
         pros::Task::delay(4);
     }
