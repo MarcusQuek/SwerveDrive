@@ -6,6 +6,7 @@
 #include <sstream>
 #include <vector>
 #include "api.h"
+#include "vector.h"
 
 // #define LEFT_UPPER_BEVEL_MOTOR_1 15
 // #define LEFT_UPPER_BEVEL_MOTOR_2 12 
@@ -95,19 +96,35 @@ extern "C" int32_t vexGenericSerialTransmit( uint32_t index, uint8_t *buffer, in
 
 //Controllers
 int leftX = 0, leftY = 0, rightX = 0;
+
+//PARAMETERS
 const double DEADBAND = 8.0;
 const double MAX_RPM = 450.0;
+const double TRANSLATE_RATIO = 1.0;
+const double ROTATE_RATIO = 3.0;
+const double WHEEL_RADIUS = 34.925;
+const double MAX_SPEED = (2.0*M_PI*WHEEL_RADIUS*MAX_RPM)/60.0 ; //mm per second
+const double SPEED_TO_RPM = 60.0/(2.0*M_PI*WHEEL_RADIUS);
+const double MAX_ANGULAR = 1.0; // rad/s
+const double ACCEL = 1000.0;    // mm/s2
+const double ANGULAR_ACCEL = 1.0;   // rad/s2
 const double SCALING_FACTOR = MAX_RPM / 127.0;
 const double TO_DEGREES = (180.0 / M_PI);
 const double TO_RADIANS = (M_PI / 180.0);
-const double WHEEL_BASE_RADIUS = 0.2;
+const double WHEEL_BASE_RADIUS = 263.0/2.0;   // mm
+const double THETA_MAX = 15.0;
 
-//SwerveTranslation
-double left_wheel_speed = 0.0;
-double right_wheel_speed = 0.0;
+//moving (moveBase)
+vector3D target_v;
+vector3D target_r;
+vector3D temp;
+vector3D v_right;
+vector3D v_left;
+double theta; // angle between direction vector and robot right, rads
 
-//SetWheelAngle
-bool setAngle = false;
+const double kP = 0.1;
+const double kI = 0.0;
+const double kD = 0.001;
 
 const double lkP = 1.1;
 const double lkI = 0.0;
@@ -116,6 +133,15 @@ const double lkD = 0.0;
 const double rkP = 1.1;
 const double rkI = 0.0;
 const double rkD = 0.0;
+
+
+//SwerveTranslation
+double left_wheel_speed = 0.0;
+double right_wheel_speed = 0.0;
+
+//SetWheelAngle
+bool setAngle = false;
+
 
 double target_angle = 0.0;
 double target_angleL = 0.0;
