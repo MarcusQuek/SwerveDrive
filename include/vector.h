@@ -40,9 +40,12 @@ public:
     vector3D operator- (vector3D &obj){
         return vector3D(x-obj.x,y-obj.y,z-obj.z);
     }
+    vector3D operator- (){
+        return vector3D(-x,-y,-z);
+    }
 
-    vector3D operator* (vector3D &obj){
-        return vector3D(x*obj.x,y*obj.y,z*obj.z);
+    double operator* (vector3D &obj){
+        return (x*obj.x+y*obj.y+z*obj.z);
     }
 
     vector3D operator^ (vector3D &obj){
