@@ -36,6 +36,7 @@
 
 #include "api.h"
 #include "definitions.h"
+#include "pid.h"
 
 /**
  * You should add more #includes here

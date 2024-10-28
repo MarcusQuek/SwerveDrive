@@ -140,11 +140,22 @@ vector3D normalizeRotation(int x_in){
         value = value * -1.0;
     }
     out.load(0.0,0.0,value);
-    return out;
+    return -out;
 }
 
+
 double angle(vector3D v1, vector3D v2){
-    return acos((v1*v2)/(v1.norm()*v2.norm()));
+    double dot = v1*v2;
+    double det = v1.x * v2.y - v1.y * v2.x;
+    return -atan2(det, dot);
+}
+
+double max(double a, double b) {
+    return (a > b)? a : b;
+}
+
+double min(double a, double b) {
+    return (a < b)? a : b;
 }
 
 void moveBase(){
@@ -169,18 +180,33 @@ void moveBase(){
 
     double l_error = 0.0;
     double r_error = 0.0;
-    double l_p_error;
-    double r_p_error;
-    double l_int_error = 0.0;
-    double r_int_error = 0.0;
 
-    int lu;
-    int ll;
-    int ru;
-    int rl;
+    double current_l_velocity = 0.0;
+    double current_r_velocity = 0.0;
+    
+    double current_l_tl_error = 0.0;
+    double current_r_tl_error = 0.0;
+
+    double l_angle_pid = 0.0;
+    double r_angle_pid = 0.0;
+
+    double l_velocity_pid = 0.0;
+    double r_velocity_pid = 0.0;
+
+    int32_t lu;
+    int32_t ll;
+    int32_t ru;
+    int32_t rl;
+
+    PID left_angle_PID(angle_kP, angle_kI, angle_kD);
+    PID right_angle_PID(angle_kP, angle_kI, angle_kD);
+    PID left_velocity_PID(velocity_kP, velocity_kI, velocity_kD);
+    PID right_velocity_PID(velocity_kP, velocity_kI, velocity_kD);
+    
 
     vector3D L2I_pos(WHEEL_BASE_RADIUS,0.0,0.0);
     while(true){
+
         left_angle = wrapAngle(getNormalizedSensorAngle(left_rotation_sensor)-90.0)*TO_RADIANS;
         right_angle = wrapAngle(getNormalizedSensorAngle(right_rotation_sensor)-90.0)*TO_RADIANS;
         current_left_vector = vector3D(cos(left_angle),sin(left_angle),0.0);
@@ -189,10 +215,7 @@ void moveBase(){
         // TODO: switch PID to go for target angle, switch actual to use current sensor angle
         target_v = normalizeJoystick(leftX, leftY).scalar(MAX_SPEED);
         target_r = normalizeRotation(rightX).scalar(MAX_ANGULAR);
-        
-        pros::lcd::print(3,"rightx %.3f", rightX);
-        pros::lcd::print(0, "target_v %.1lf, %.1lf", target_v.x, target_v.y);
-        pros::lcd::print(1, "target_r %.1lf", target_r.z);
+
         rotational_v_vector = L2I_pos^target_r;
         
         v_left = target_v-rotational_v_vector;
@@ -214,64 +237,75 @@ void moveBase(){
             reverse_right = true;
         }
 
-
-        
-        //theta = atan2(target_v.y, target_v.x); // angle between direction vector and robot right, rads
-        //theta_div = fabs(target_r.z)*fabs(cos(theta))*THETA_MAX*TO_RADIANS; //cosine map for angle deviation magnitude, degrees
-        /*
-        right_target_angle = (target_r.z>0)? theta+theta_div:theta-theta_div; //direction target 
-        left_target_angle = (target_r.z>0)? theta-theta_div:theta+theta_div;
-        if(right_target_angle<TOLERANCE){
-            v_left_magnitude = target_r.norm()/(2.0*WHEEL_BASE_RADIUS*sin(left_target_angle)); // v_right magnitude
-            v_left.load(v_left_magnitude*cos(left_target_angle), v_left_magnitude*sin(left_target_angle), 0.0);
-            v_right = target_v - v_left;
-        }else{
-            v_right_magnitude = target_r.norm()/(2.0*WHEEL_BASE_RADIUS*sin(right_target_angle)); // v_right magnitude
-            v_right.load(v_right_magnitude*cos(right_target_angle), v_right_magnitude*sin(right_target_angle), 0.0);
-            v_left = target_v - v_right;
-        }*/
-
-        v_right_velocity = SPEED_TO_RPM* TRANSLATE_RATIO* v_right.norm();
-        v_left_velocity = SPEED_TO_RPM* TRANSLATE_RATIO* v_left.norm();
+        v_right_velocity = SPEED_TO_RPM* TRANSLATE_RATIO*(v_right*current_right_vector);
+        v_left_velocity = SPEED_TO_RPM* TRANSLATE_RATIO*(v_left*current_left_vector);
 
         if(reverse_left){
-            v_left_velocity = v_left_velocity * -1.0;
+            v_left_velocity = -v_left_velocity;
         }
+
         if(reverse_right){
-            v_right_velocity = v_right_velocity * -1.0;
+            v_right_velocity = -v_right_velocity;
         }
 
+        pros::lcd::print(4, "left reverse %d", reverse_left);
+        pros::lcd::print(5, "righ reverse %d", reverse_right);
+        
 
-        l_p_error = l_error;
-        r_p_error = r_error;
-
+        // calculate the error angle
         l_error = angle(current_left_vector, v_left);
         r_error = angle(current_right_vector, v_right);
+        if (std::isnan(l_error) || std::isnan(r_error)) {
+            l_error = 0.0; r_error = 0.0;
+        }
 
-        l_int_error += l_error;
-        r_int_error += r_error;
-
-        pros::lcd::print(5, "%.3f, %.3f, %.1f", l_error, (kP*(l_error)+kI*(l_int_error)+kD*(l_p_error-l_error)), v_left_velocity);
-        pros::lcd::print(6, "%.3f, %.3f, %.1f", r_error, (kP*(r_error)+kI*(r_int_error)+kD*(r_p_error-r_error)), v_right_velocity);
-
-        lu = v_left_velocity + (kP*(l_error)+kI*(l_int_error)+kD*(l_p_error-l_error));
-        ll = v_left_velocity - (kP*(l_error)+kI*(l_int_error)+kD*(l_p_error-l_error));
-        ru = v_right_velocity + (kP*(r_error)+kI*(r_int_error)+kD*(r_p_error-r_error));
-        rl = v_right_velocity - (kP*(r_error)+kI*(r_int_error)+kD*(r_p_error-r_error));
+        //calculate the wheel error
+        current_l_velocity = ((luA.get_actual_velocity()+luB.get_actual_velocity()+llA.get_actual_velocity()+llB.get_actual_velocity())/4.0);
+        current_r_velocity = ((ruA.get_actual_velocity()+ruB.get_actual_velocity()+rlA.get_actual_velocity()+rlB.get_actual_velocity())/4.0);
+        current_l_tl_error = (v_left_velocity-current_l_velocity);
+        current_r_tl_error = (v_right_velocity-current_r_velocity);
         
-        luA.move_velocity(lu);
-        luB.move_velocity(lu);
+        l_velocity_pid += left_velocity_PID.step(current_l_tl_error);
+        r_velocity_pid += right_velocity_PID.step(current_r_tl_error);
+        
+        pros::lcd::print(1, "current_l  %3.2f", current_l_velocity);        
+        pros::lcd::print(2, "tl_l_error %3.2f", current_l_tl_error);
+        pros::lcd::print(3, "current_r  %3.2f", current_r_velocity);
+        pros::lcd::print(4, "tl_r_error %3.2f", current_r_tl_error);
 
-        llA.move_velocity(ll);
-        llB.move_velocity(ll);
 
-        ruA.move_velocity(ru);
-        ruB.move_velocity(ru);
+        // calculate the PID output
+        l_angle_pid = left_angle_PID.step(l_error);
+        r_angle_pid = right_angle_PID.step(r_error);
 
-        rlA.move_velocity(rl);
-        rlB.move_velocity(rl);
-        pros::lcd::print(2,"%3d, %3d, %3d, %3d", lu, ll,ru, rl);
-        pros::Task::delay(4);
+        double scale = 30;
+        
+        lu = (int32_t)std::clamp(scale * (l_velocity_pid + l_angle_pid), -MAX_VOLTAGE, MAX_VOLTAGE); //this side seems less powerful on the robot
+        ll = (int32_t)std::clamp(scale * (l_velocity_pid - l_angle_pid), -MAX_VOLTAGE, MAX_VOLTAGE);
+        ru = (int32_t)std::clamp(scale * (r_velocity_pid + r_angle_pid), -MAX_VOLTAGE, MAX_VOLTAGE);
+        rl = (int32_t)std::clamp(scale * (r_velocity_pid - r_angle_pid), -MAX_VOLTAGE, MAX_VOLTAGE);
+        
+        //pros::lcd::print(4, "diff %6.4f, %6.4f", kD*l_p_error - kD*l_error, (kD*l_p_error - kD*l_error)/dt);
+        // pros::lcd::print(6, "p %5.1f pterm %5.2f", angle_kP, angle_kP*(l_error));
+        // pros::lcd::print(4, "error %10.7f", l_error);
+        // pros::lcd::print(5, "prev  %10.7f", l_p_error);
+        // pros::lcd::print(7, "d %8.2f dterm %10.7f", kD, l_dterm);
+
+        
+
+        luA.move_voltage(lu);
+        luB.move_voltage(lu);
+
+        llA.move_voltage(ll);
+        llB.move_voltage(ll);
+
+        ruA.move_voltage(ru);
+        ruB.move_voltage(ru);
+
+        rlA.move_voltage(rl);
+        rlB.move_voltage(rl);
+
+        pros::Task::delay(2);
     }
 }
 

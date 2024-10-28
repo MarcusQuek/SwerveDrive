@@ -98,8 +98,8 @@ extern "C" int32_t vexGenericSerialTransmit( uint32_t index, uint8_t *buffer, in
 int leftX = 0, leftY = 0, rightX = 0;
 
 //PARAMETERS
-const double DEADBAND =  10.0;
-const double MAX_RPM = 300.0;
+const double DEADBAND =  8.0;
+const double MAX_RPM = 400.0;
 const double TRANSLATE_RATIO = 1.0;
 const double ROTATE_RATIO = 3.0;
 const double WHEEL_RADIUS = 34.925;
@@ -122,18 +122,15 @@ vector3D v_right;
 vector3D v_left;
 double theta; // angle between direction vector and robot right, rads
 
-const double kP = 10.0;
-const double kI = 0.0;
-const double kD = 0.1;
+const double angle_kP = 18.4;
+const double angle_kI = 0.001;//0.08;
+const double angle_kD = 0.0;//7200.0;
 
-const double lkP = 1.1;
-const double lkI = 0.0;
-const double lkD = 0.0;
+const double MAX_VOLTAGE = 12000;
 
-const double rkP = 1.1;
-const double rkI = 0.0;
-const double rkD = 0.0;
-
+const double velocity_kP = 0.003;
+const double velocity_kI = 0.000;//0.08;
+const double velocity_kD = 100.0;//7200.0;
 
 //SwerveTranslation
 double left_wheel_speed = 0.0;
