@@ -99,7 +99,7 @@ int leftX = 0, leftY = 0, rightX = 0;
 
 //PARAMETERS
 const double DEADBAND =  8.0;
-const double MAX_RPM = 400.0;
+const double MAX_RPM = 600.0;
 const double TRANSLATE_RATIO = 1.0;
 const double ROTATE_RATIO = 3.0;
 const double WHEEL_RADIUS = 34.925;
@@ -122,15 +122,15 @@ vector3D v_right;
 vector3D v_left;
 double theta; // angle between direction vector and robot right, rads
 
-const double angle_kP = 18.4;
-const double angle_kI = 0.001;//0.08;
-const double angle_kD = 0.0;//7200.0;
+const double angle_kP = 28.0;
+const double angle_kI = 0.00;//0.08;
+const double angle_kD = 00.0;//7200.0;
 
 const double MAX_VOLTAGE = 12000;
 
-const double velocity_kP = 0.003;
+const double velocity_kP = 0.002;
 const double velocity_kI = 0.000;//0.08;
-const double velocity_kD = 100.0;//7200.0;
+const double velocity_kD = 160.0;//7200.0;
 
 //SwerveTranslation
 double left_wheel_speed = 0.0;

@@ -192,6 +192,15 @@ void moveBase(){
 
     double l_velocity_pid = 0.0;
     double r_velocity_pid = 0.0;
+    double scale  = 30.0;
+    double base_v = 0.7;
+    double lscale = 0;
+    double rscale = 0;
+
+    double current_angular = 0.0;
+
+    uint64_t micros_current = 0.0;
+    uint64_t dt = 0.0;
 
     int32_t lu;
     int32_t ll;
@@ -212,9 +221,25 @@ void moveBase(){
         current_left_vector = vector3D(cos(left_angle),sin(left_angle),0.0);
         current_right_vector = vector3D(cos(right_angle),sin(right_angle),0.0);
 
+        current_l_velocity = ((luA.get_actual_velocity()+luB.get_actual_velocity()+llA.get_actual_velocity()+llB.get_actual_velocity())/4.0);
+        current_r_velocity = ((ruA.get_actual_velocity()+ruB.get_actual_velocity()+rlA.get_actual_velocity()+rlB.get_actual_velocity())/4.0);
+
+        current_angular = (current_l_velocity*sin(left_angle)+current_r_velocity*sin(right_angle))/(2.0*WHEEL_BASE_RADIUS);
+
+
         // TODO: switch PID to go for target angle, switch actual to use current sensor angle
-        target_v = normalizeJoystick(leftX, leftY).scalar(MAX_SPEED);
+        target_v = normalizeJoystick(-leftX, -leftY).scalar(MAX_SPEED);
         target_r = normalizeRotation(rightX).scalar(MAX_ANGULAR);
+
+        double l_angular_comp = 0.0;
+        double r_angular_comp = 0.0;
+        if(target_r.norm()<(MAX_ANGULAR*0.05)){
+            target_r = vector3D(0,0,-0.5*current_angular);
+        }
+
+        
+        pros::lcd::print(4, "current_angular %3.3f", current_angular);
+        pros::lcd::print(5, "tr_norm %3.3f", target_r.norm());
 
         rotational_v_vector = L2I_pos^target_r;
         
@@ -248,8 +273,6 @@ void moveBase(){
             v_right_velocity = -v_right_velocity;
         }
 
-        pros::lcd::print(4, "left reverse %d", reverse_left);
-        pros::lcd::print(5, "righ reverse %d", reverse_right);
         
 
         // calculate the error angle
@@ -260,38 +283,37 @@ void moveBase(){
         }
 
         //calculate the wheel error
-        current_l_velocity = ((luA.get_actual_velocity()+luB.get_actual_velocity()+llA.get_actual_velocity()+llB.get_actual_velocity())/4.0);
-        current_r_velocity = ((ruA.get_actual_velocity()+ruB.get_actual_velocity()+rlA.get_actual_velocity()+rlB.get_actual_velocity())/4.0);
         current_l_tl_error = (v_left_velocity-current_l_velocity);
         current_r_tl_error = (v_right_velocity-current_r_velocity);
         
         l_velocity_pid += left_velocity_PID.step(current_l_tl_error);
         r_velocity_pid += right_velocity_PID.step(current_r_tl_error);
-        
+        /*
         pros::lcd::print(1, "current_l  %3.2f", current_l_velocity);        
         pros::lcd::print(2, "tl_l_error %3.2f", current_l_tl_error);
         pros::lcd::print(3, "current_r  %3.2f", current_r_velocity);
         pros::lcd::print(4, "tl_r_error %3.2f", current_r_tl_error);
-
+        */
 
         // calculate the PID output
         l_angle_pid = left_angle_PID.step(l_error);
         r_angle_pid = right_angle_PID.step(r_error);
 
-        double scale = 30;
         
-        lu = (int32_t)std::clamp(scale * (l_velocity_pid + l_angle_pid), -MAX_VOLTAGE, MAX_VOLTAGE); //this side seems less powerful on the robot
-        ll = (int32_t)std::clamp(scale * (l_velocity_pid - l_angle_pid), -MAX_VOLTAGE, MAX_VOLTAGE);
-        ru = (int32_t)std::clamp(scale * (r_velocity_pid + r_angle_pid), -MAX_VOLTAGE, MAX_VOLTAGE);
-        rl = (int32_t)std::clamp(scale * (r_velocity_pid - r_angle_pid), -MAX_VOLTAGE, MAX_VOLTAGE);
+
+        lscale = scale * ((1.0-base_v)*fabs((l_error))+base_v);
+        rscale = scale * ((1.0-base_v)*fabs((r_error))+base_v);
+
+        lu = (int32_t)std::clamp(lscale * (l_velocity_pid + l_angle_pid), -MAX_VOLTAGE, MAX_VOLTAGE); //this side seems less powerful on the robot
+        ll = (int32_t)std::clamp(lscale * (l_velocity_pid - l_angle_pid), -MAX_VOLTAGE, MAX_VOLTAGE);
+        ru = (int32_t)std::clamp(rscale * (r_velocity_pid + r_angle_pid), -MAX_VOLTAGE, MAX_VOLTAGE);
+        rl = (int32_t)std::clamp(rscale * (r_velocity_pid - r_angle_pid), -MAX_VOLTAGE, MAX_VOLTAGE);
         
         //pros::lcd::print(4, "diff %6.4f, %6.4f", kD*l_p_error - kD*l_error, (kD*l_p_error - kD*l_error)/dt);
         // pros::lcd::print(6, "p %5.1f pterm %5.2f", angle_kP, angle_kP*(l_error));
         // pros::lcd::print(4, "error %10.7f", l_error);
         // pros::lcd::print(5, "prev  %10.7f", l_p_error);
         // pros::lcd::print(7, "d %8.2f dterm %10.7f", kD, l_dterm);
-
-        
 
         luA.move_voltage(lu);
         luB.move_voltage(lu);
@@ -304,8 +326,9 @@ void moveBase(){
 
         rlA.move_voltage(rl);
         rlB.move_voltage(rl);
-
-        pros::Task::delay(2);
+    
+        
+        pros::Task::delay(1);
     }
 }
 
