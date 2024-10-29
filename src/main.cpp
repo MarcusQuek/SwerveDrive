@@ -198,6 +198,9 @@ void moveBase(){
     double rscale = 0;
 
     double current_angular = 0.0;
+    vector3D current_tl_velocity(0,0,0);
+    double average_x_v = 0;
+    double average_y_v = 0;
 
     uint64_t micros_current = 0.0;
     uint64_t dt = 0.0;
@@ -225,7 +228,9 @@ void moveBase(){
         current_r_velocity = ((ruA.get_actual_velocity()+ruB.get_actual_velocity()+rlA.get_actual_velocity()+rlB.get_actual_velocity())/4.0);
 
         current_angular = (current_l_velocity*sin(left_angle)+current_r_velocity*sin(right_angle))/(2.0*WHEEL_BASE_RADIUS);
-
+        average_x_v = ((current_l_velocity*cos(left_angle))+(current_r_velocity*cos(right_angle)))/2.0;
+        average_y_v = ((current_l_velocity*sin(left_angle))+(current_r_velocity*sin(right_angle)))/2.0;
+        current_tl_velocity.load(average_x_v,average_y_v,0.0);
 
         // TODO: switch PID to go for target angle, switch actual to use current sensor angle
         target_v = normalizeJoystick(-leftX, -leftY).scalar(MAX_SPEED);
@@ -233,8 +238,11 @@ void moveBase(){
 
         double l_angular_comp = 0.0;
         double r_angular_comp = 0.0;
-        if(target_r.norm()<(MAX_ANGULAR*0.05)){
-            target_r = vector3D(0,0,-0.5*current_angular);
+        if(target_r.norm()<(MAX_ANGULAR*0.05) && current_angular>(MAX_ANGULAR*0.05)){
+            target_r = vector3D(0,0,-0.3*current_angular);
+        }
+        if(target_v.norm()<(MAX_SPEED*0.05) && current_tl_velocity.norm()>(MAX_SPEED*0.05)){
+            target_v = current_tl_velocity.scalar(0.1);
         }
 
         
