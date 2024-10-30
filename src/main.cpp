@@ -159,11 +159,6 @@ double min(double a, double b) {
 }
 
 void moveBase(){
-    int v_right_rpm;
-    int v_left_rpm;
-    double theta_div;
-    double v_right_magnitude;
-    double v_left_magnitude;
     double v_right_velocity;
     double v_left_velocity;
     double left_angle;
@@ -174,9 +169,6 @@ void moveBase(){
     
     vector3D current_left_vector;
     vector3D current_right_vector;
-    double sin_left;
-    double sin_right;
-    double TOLERANCE = 5.0*TO_RADIANS;
 
     double l_error = 0.0;
     double r_error = 0.0;
@@ -192,18 +184,24 @@ void moveBase(){
 
     double l_velocity_pid = 0.0;
     double r_velocity_pid = 0.0;
-    double scale  = 30.0;
-    double base_v = 0.7;
     double lscale = 0;
     double rscale = 0;
 
     double current_angular = 0.0;
     vector3D current_tl_velocity(0,0,0);
+    vector3D prev_target_v(0,0,0);
+    vector3D prev_target_r(0,0,0);
+    vector3D v_fterm(0,0,0);
+    vector3D r_fterm(0,0,0);
     double average_x_v = 0;
     double average_y_v = 0;
 
-    uint64_t micros_current = 0.0;
-    uint64_t dt = 0.0;
+
+
+    uint64_t micros_now = -1;
+    
+    uint64_t micros_prev = pros::micros();
+    uint64_t dt = -1;
 
     int32_t lu;
     int32_t ll;
@@ -232,24 +230,38 @@ void moveBase(){
         average_y_v = ((current_l_velocity*sin(left_angle))+(current_r_velocity*sin(right_angle)))/2.0;
         current_tl_velocity.load(average_x_v,average_y_v,0.0);
 
+        prev_target_v = target_v;
+        prev_target_r = target_r;
         // TODO: switch PID to go for target angle, switch actual to use current sensor angle
         target_v = normalizeJoystick(-leftX, -leftY).scalar(MAX_SPEED);
         target_r = normalizeRotation(rightX).scalar(MAX_ANGULAR);
 
-        double l_angular_comp = 0.0;
-        double r_angular_comp = 0.0;
+        micros_prev = micros_now;
+        micros_now = pros::micros();
+        dt = micros_now-micros_prev;
+        v_fterm = (target_v-prev_target_v).scalar((v_kF/dt));
+        r_fterm = (target_r-prev_target_r).scalar((r_kF/dt));
+        target_v = target_v + v_fterm;
+        target_r = target_r + r_fterm;
+        pros::lcd::print(1,"r_fterm %3.3f", r_fterm.z);
+
+        /*
         if(target_r.norm()<(MAX_ANGULAR*0.05) && current_angular>(MAX_ANGULAR*0.05)){
             target_r = vector3D(0,0,-0.3*current_angular);
         }
         if(target_v.norm()<(MAX_SPEED*0.05) && current_tl_velocity.norm()>(MAX_SPEED*0.05)){
             target_v = current_tl_velocity.scalar(0.1);
-        }
+        }*/
 
-        
-        pros::lcd::print(4, "current_angular %3.3f", current_angular);
-        pros::lcd::print(5, "tr_norm %3.3f", target_r.norm());
+        pros::lcd::print(2, "la %3.3f", left_angle);
+        pros::lcd::print(3, "ra %3.3f", right_angle);
+
 
         rotational_v_vector = L2I_pos^target_r;
+        
+        pros::lcd::print(6, "rot_v_y %3.8f", rotational_v_vector.y);
+        
+        pros::lcd::print(7, "rot_v_x %3.8f", rotational_v_vector.x);
         
         v_left = target_v-rotational_v_vector;
         v_right = target_v+rotational_v_vector;
@@ -290,12 +302,18 @@ void moveBase(){
             l_error = 0.0; r_error = 0.0;
         }
 
+        
+        pros::lcd::print(4, "la_target %3.3f", (l_error+left_angle));
+        pros::lcd::print(5, "ra_target %3.3f", (r_error+right_angle));
+
         //calculate the wheel error
         current_l_tl_error = (v_left_velocity-current_l_velocity);
         current_r_tl_error = (v_right_velocity-current_r_velocity);
         
         l_velocity_pid += left_velocity_PID.step(current_l_tl_error);
         r_velocity_pid += right_velocity_PID.step(current_r_tl_error);
+
+
         /*
         pros::lcd::print(1, "current_l  %3.2f", current_l_velocity);        
         pros::lcd::print(2, "tl_l_error %3.2f", current_l_tl_error);
@@ -362,12 +380,9 @@ void initialize(){
   left_rotation_sensor.set_position(0);
     right_rotation_sensor.set_position(0);
 
-  imu.reset(true);
-    imu.set_data_rate(5);
-
-    lifter.calibrate();
+  
     pros::Task move_base(moveBase);
-    pros::Task serial_read(serialRead);
+    //pros::Task serial_read(serialRead);
 
   master.clear();
 }

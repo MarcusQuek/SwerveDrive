@@ -122,22 +122,23 @@ vector3D v_right;
 vector3D v_left;
 double theta; // angle between direction vector and robot right, rads
 
-const double angle_kP = 28.0;
-const double angle_kI = 0.00;//0.08;
-const double angle_kD = 00.0;//7200.0;
+const double angle_kP = 28.0;   //swerve wheel rotation
+const double angle_kI = 0.00;
+const double angle_kD = 5000.0;
 
 const double MAX_VOLTAGE = 12000;
 
-const double velocity_kP = 0.002;
-const double velocity_kI = 0.000;//0.08;
-const double velocity_kD = 160.0;//7200.0;
+const double velocity_kP = 0.002;   //swerve wheel power
+const double velocity_kI = 0.000;
+const double velocity_kD = 160.0;
 
-//SwerveTranslation
-double left_wheel_speed = 0.0;
-double right_wheel_speed = 0.0;
+const double r_kF = 0.07;   //feedforward compensation for rotation
+const double v_kF = 0.3;    //feedforward compensation for translation
 
-//SetWheelAngle
-bool setAngle = false;
+const double scale  = 30.0;
+const double base_v = 0.7;
+
+
 
 
 double target_angle = 0.0;
