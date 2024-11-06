@@ -63,13 +63,6 @@ void brake(){
     pros::delay(1);
 }
 
-//Sets a hard capped limit for motor RPM
-double bound_value(double value){
-    if (value > MAX_RPM) return MAX_RPM;
-    if (value < -MAX_RPM) return -MAX_RPM;
-    return value;
-}
-
 //Converts rotational sensor readings into degrees and bounds it between -180 to 180
 double getNormalizedSensorAngle(pros::Rotation &sensor){
     double angle = sensor.get_angle() / 100.0; //Convert from centidegrees to degrees
@@ -95,15 +88,6 @@ double wrapAngle(double angle){
     return angle;
 }
 
-double closestAngle(double angle, double target_angle){// in degrees
-    if((target_angle-angle)>180.0){
-        return -(360-(target_angle-angle));
-    }else{
-        return target_angle-angle;
-    }
-}
-
-
 vector3D normalizeJoystick(int x_in, int y_in){
     double angle = atan2(y_in,x_in) * TO_DEGREES;
     double scaleLength;
@@ -122,7 +106,6 @@ vector3D normalizeJoystick(int x_in, int y_in){
     }
     scaleLength = fabs(scaleLength)-DEADBAND;
     magnitude = (length-DEADBAND)/scaleLength;
-    
     
     out.load(magnitude*cos(angle*TO_RADIANS),magnitude*sin(angle*TO_RADIANS),0.0);
     return out;
@@ -196,8 +179,6 @@ void moveBase(){
     double average_x_v = 0;
     double average_y_v = 0;
 
-
-
     uint64_t micros_now = -1;
     
     uint64_t micros_prev = pros::micros();
@@ -239,29 +220,31 @@ void moveBase(){
         micros_prev = micros_now;
         micros_now = pros::micros();
         dt = micros_now-micros_prev;
-        v_fterm = (target_v-prev_target_v).scalar((v_kF/dt));
-        r_fterm = (target_r-prev_target_r).scalar((r_kF/dt));
+        v_fterm = (target_v-prev_target_v)*(v_kF/dt);
+        r_fterm = (target_r-prev_target_r)*(r_kF/dt);
         target_v = target_v + v_fterm;
         target_r = target_r + r_fterm;
-        pros::lcd::print(1,"r_fterm %3.3f", r_fterm.z);
-
+        
         /*
         if(target_r.norm()<(MAX_ANGULAR*0.05) && current_angular>(MAX_ANGULAR*0.05)){
             target_r = vector3D(0,0,-0.3*current_angular);
         }
         if(target_v.norm()<(MAX_SPEED*0.05) && current_tl_velocity.norm()>(MAX_SPEED*0.05)){
             target_v = current_tl_velocity.scalar(0.1);
-        }*/
+
+        pros::lcd::print(1,"r_fterm %3.3f", r_fterm.z);
+        
+        pros::lcd::print(4, "la_target %3.3f", (l_error+left_angle));
+        pros::lcd::print(5, "ra_target %3.3f", (r_error+right_angle));
+
+        pros::lcd::print(6, "rot_v_y %3.8f", rotational_v_vector.y);
+        pros::lcd::print(7, "rot_v_x %3.8f", rotational_v_vector.x);
 
         pros::lcd::print(2, "la %3.3f", left_angle);
         pros::lcd::print(3, "ra %3.3f", right_angle);
-
+        }*/
 
         rotational_v_vector = L2I_pos^target_r;
-        
-        pros::lcd::print(6, "rot_v_y %3.8f", rotational_v_vector.y);
-        
-        pros::lcd::print(7, "rot_v_x %3.8f", rotational_v_vector.x);
         
         v_left = target_v-rotational_v_vector;
         v_right = target_v+rotational_v_vector;
@@ -293,8 +276,6 @@ void moveBase(){
             v_right_velocity = -v_right_velocity;
         }
 
-        
-
         // calculate the error angle
         l_error = angle(current_left_vector, v_left);
         r_error = angle(current_right_vector, v_right);
@@ -302,30 +283,16 @@ void moveBase(){
             l_error = 0.0; r_error = 0.0;
         }
 
-        
-        pros::lcd::print(4, "la_target %3.3f", (l_error+left_angle));
-        pros::lcd::print(5, "ra_target %3.3f", (r_error+right_angle));
-
         //calculate the wheel error
         current_l_tl_error = (v_left_velocity-current_l_velocity);
         current_r_tl_error = (v_right_velocity-current_r_velocity);
-        
+
         l_velocity_pid += left_velocity_PID.step(current_l_tl_error);
         r_velocity_pid += right_velocity_PID.step(current_r_tl_error);
-
-
-        /*
-        pros::lcd::print(1, "current_l  %3.2f", current_l_velocity);        
-        pros::lcd::print(2, "tl_l_error %3.2f", current_l_tl_error);
-        pros::lcd::print(3, "current_r  %3.2f", current_r_velocity);
-        pros::lcd::print(4, "tl_r_error %3.2f", current_r_tl_error);
-        */
 
         // calculate the PID output
         l_angle_pid = left_angle_PID.step(l_error);
         r_angle_pid = right_angle_PID.step(r_error);
-
-        
 
         lscale = scale * ((1.0-base_v)*fabs((l_error))+base_v);
         rscale = scale * ((1.0-base_v)*fabs((r_error))+base_v);
@@ -334,12 +301,7 @@ void moveBase(){
         ll = (int32_t)std::clamp(lscale * (l_velocity_pid - l_angle_pid), -MAX_VOLTAGE, MAX_VOLTAGE);
         ru = (int32_t)std::clamp(rscale * (r_velocity_pid + r_angle_pid), -MAX_VOLTAGE, MAX_VOLTAGE);
         rl = (int32_t)std::clamp(rscale * (r_velocity_pid - r_angle_pid), -MAX_VOLTAGE, MAX_VOLTAGE);
-        
-        //pros::lcd::print(4, "diff %6.4f, %6.4f", kD*l_p_error - kD*l_error, (kD*l_p_error - kD*l_error)/dt);
-        // pros::lcd::print(6, "p %5.1f pterm %5.2f", angle_kP, angle_kP*(l_error));
-        // pros::lcd::print(4, "error %10.7f", l_error);
-        // pros::lcd::print(5, "prev  %10.7f", l_p_error);
-        // pros::lcd::print(7, "d %8.2f dterm %10.7f", kD, l_dterm);
+    
 
         luA.move_voltage(lu);
         luB.move_voltage(lu);
@@ -353,14 +315,260 @@ void moveBase(){
         rlA.move_voltage(rl);
         rlB.move_voltage(rl);
     
-        
         pros::Task::delay(1);
     }
 }
 
+struct MotionStepCommand {
+    double Lmove, Lpivot, Rmove, Rpivot;
+
+    MotionStepCommand(double Lmove, double Lpivot, double Rmove, double Rpivot)
+        : Lmove(Lmove), Lpivot(Lpivot), Rmove(Rmove), Rpivot(Rpivot) {}
+};
+struct StepCommandList{
+    std::vector<MotionStepCommand> Steps;
+    double cax;
+    double cay;
+    double cbx;
+    double cby;
+    double ccx;
+    double ccy;
+    double cdx;
+    double cdy;
+};
+
+void GetNextStep(std::vector<MotionStepCommand>& Steps, vector3D CurrentRobotPosition, double CurrentRobotOrientation, vector3D PreviousLeftWheelPosition, vector3D PreviousRightWheelPosition) {
+    //apply definition of L(t) and R(t) to get current left and right wheel position
+    vector3D left_displacement(std::sin(CurrentRobotOrientation) * (WHEEL_BASE_RADIUS*2.0) / 2, std::cos(CurrentRobotOrientation) * (WHEEL_BASE_RADIUS*2.0) / 2);
+    vector3D right_displacement(std::sin(CurrentRobotOrientation) * (WHEEL_BASE_RADIUS*2.0) / 2, std::cos(CurrentRobotOrientation) * (WHEEL_BASE_RADIUS*2.0) / 2);
+    vector3D CurrentLeftWheelPosition = CurrentRobotPosition + left_displacement;
+    vector3D CurrentRightWheelPosition = CurrentRobotPosition + right_displacement;
+
+    //compare current left and right wheel positions to the previous left and right wheel positions to see how each wheel should move during the next step, to get from the previous to the current state
+    vector3D LeftStep = CurrentLeftWheelPosition - PreviousLeftWheelPosition;
+    vector3D RightStep = CurrentRightWheelPosition - PreviousRightWheelPosition;
+
+    //encode the step information into the Steps list
+    Steps.push_back(MotionStepCommand(LeftStep.magnitude(), LeftStep.getAngle(), RightStep.magnitude(), RightStep.getAngle()));
+}
+
+
+
+StepCommandList GenerateHermitePath(vector3D pStart, vector3D pEnd, vector3D vStart, vector3D vEnd, float StepLength, const double mt[5]) {
+    if (sizeof(mt) / sizeof(mt[0]) != 5) //mt represents the coefficients of the polynomial function m(t) which we limit to degree 4, so array size should be exactly 5
+        return {};
+ 
+    StepCommandList StepCL; //this list will store all the step motion data that causes the robot to execute the path
+
+    StepCL.cax = 2 * pStart.x + vStart.x - 2 * pEnd.x + vEnd.x;
+    StepCL.cay = 2 * pStart.y + vStart.y - 2 * pEnd.y + vEnd.y;
+    StepCL.cbx = -3 * pStart.x - 2 * vStart.x + 3 * pEnd.x - vEnd.x;
+    StepCL.cby =  -3 * pStart.y - 2 * vStart.y + 3 * pEnd.y - vEnd.y;
+    StepCL.ccx = vStart.x;
+    StepCL.ccy = vStart.y;
+    StepCL.cdx = pStart.x;
+    StepCL.cdy = pStart.y;
+
+
+    vector3D ct[4] = { //ct represents the coefficients of the polynomial function C(t) which defines the curve of the path
+        vector3D(StepCL.cax, StepCL.cay),
+        vector3D(StepCL.cbx, StepCL.cby),
+        vector3D(StepCL.ccx, StepCL.ccy),
+        vector3D(StepCL.cdx, StepCL.cdy)
+    };
+
+   vector3D CurrentRobotPosition = pStart;
+    double CurrentRobotOrientation = vector3D(vStart).getAngle();
+    double mEnd = vEnd.getAngle();
+
+    vector3D previous_left_displacement(std::sin(CurrentRobotOrientation) * (WHEEL_BASE_RADIUS*2.0) / 2, std::cos(CurrentRobotOrientation) * (WHEEL_BASE_RADIUS*2.0) / 2);
+    vector3D previous_right_displacement(-std::sin(CurrentRobotOrientation) * (WHEEL_BASE_RADIUS*2.0) / 2, -std::cos(CurrentRobotOrientation) * (WHEEL_BASE_RADIUS*2.0) / 2);
+    vector3D PreviousLeftWheelPosition = CurrentRobotPosition + previous_left_displacement;
+    vector3D PreviousRightWheelPosition = CurrentRobotPosition + previous_right_displacement;
+    for (float t = StepLength; t < 1; t += StepLength) {
+        //apply C(t) equation to get CurrentRobotPosition
+        CurrentRobotPosition = vector3D(
+            ct[0].x * std::pow(t, 3) + ct[1].x * std::pow(t, 2) + ct[2].x * t + ct[3].x,
+            ct[0].y * std::pow(t, 3) + ct[1].y * std::pow(t, 2) + ct[2].y * t + ct[3].y
+        );
+        //apply m(t) equation to get CurrentRobotOrientation
+        CurrentRobotOrientation = mEnd + mt[0] * std::pow(t, 4) + mt[1] * std::pow(t, 3) + mt[2] * std::pow(t, 2) + mt[3] * t + mt[4]; //orientation changes according to m(t) function
+        GetNextStep(StepCL.Steps, CurrentRobotPosition, CurrentRobotOrientation, PreviousLeftWheelPosition, PreviousRightWheelPosition);
+    }
+    return StepCL;
+}
+
+void move_auton(vector3D delta, vector3D velocity = vector3D(0,0,0)){
+    
+    int32_t lu;
+    int32_t ll;
+    int32_t ru;
+    int32_t rl;
+
+    PID left_angle_PID(angle_kP, angle_kI, angle_kD);
+    PID right_angle_PID(angle_kP, angle_kI, angle_kD);
+    PID left_velocity_PID(velocity_kP, velocity_kI, velocity_kD);
+    PID right_velocity_PID(velocity_kP, velocity_kI, velocity_kD);
+
+    double v_right_velocity;
+    double v_left_velocity;
+    double left_angle;
+    double right_angle;
+    double left_target_angle;
+    double right_target_angle;
+    vector3D rotational_v_vector;
+    
+    vector3D current_left_vector;
+    vector3D current_right_vector;
+
+    double l_error = 0.0;
+    double r_error = 0.0;
+
+    double current_l_velocity = 0.0;
+    double current_r_velocity = 0.0;
+    
+    double current_l_tl_error = 0.0;
+    double current_r_tl_error = 0.0;
+
+    double l_angle_pid = 0.0;
+    double r_angle_pid = 0.0;
+
+    double l_velocity_pid = 0.0;
+    double r_velocity_pid = 0.0;
+    double lscale = 0;
+    double rscale = 0;
+    vector3D start_pos(0,0,0);
+    left_angle = wrapAngle(getNormalizedSensorAngle(left_rotation_sensor)-90.0)*TO_RADIANS;
+    right_angle = wrapAngle(getNormalizedSensorAngle(right_rotation_sensor)-90.0)*TO_RADIANS;
+    current_l_velocity = ((luA.get_actual_velocity()+luB.get_actual_velocity()+llA.get_actual_velocity()+llB.get_actual_velocity())/4.0);
+    current_r_velocity = ((ruA.get_actual_velocity()+ruB.get_actual_velocity()+rlA.get_actual_velocity()+rlB.get_actual_velocity())/4.0);
+    double current_angular = (current_l_velocity*sin(left_angle)+current_r_velocity*sin(right_angle))/(2.0*WHEEL_BASE_RADIUS);
+    double average_x_v = ((current_l_velocity*cos(left_angle))+(current_r_velocity*cos(right_angle)))/2.0;
+    double average_y_v = ((current_l_velocity*sin(left_angle))+(current_r_velocity*sin(right_angle)))/2.0;
+    vector3D start_velocity(average_x_v,average_y_v,current_angular);
+    double expected_time = 0;
+    double mt[5] = {0};
+    mt[3] = -delta.z;   // Set the m(t) to -m_end*t
+    //finding total length
+    double length = 0;  // in mm
+    double t, T;
+    const int n = 10000; //number of subdivisions of the function
+    StepCommandList stepCommands = GenerateHermitePath(start_pos, delta, start_velocity, velocity, (1.0/n), mt);
+    for (int i = 1; i < n; i++) {
+        t = static_cast<double>(i) / n;
+        T = static_cast<double>(i - 1) / n;
+        vector3D v1(stepCommands.cax * std::pow(t, 3) + stepCommands.cbx * std::pow(t, 2) + stepCommands.ccx * t + stepCommands.cdx, stepCommands.cay * std::pow(t, 3) + stepCommands.cby * std::pow(t, 2) + stepCommands.ccy * t + stepCommands.cdy);
+        vector3D v2((stepCommands.cax * std::pow(T, 3) + stepCommands.cbx * std::pow(T, 2) + stepCommands.ccx * T + stepCommands.cdx), stepCommands.cay * std::pow(T, 3) + stepCommands.cby * std::pow(T, 2) + stepCommands.ccy * T + stepCommands.cdy);
+        length += (v1-v2).magnitude();
+    }
+    double BASE_ACCEL_LENGTH = (MAX_SPEED*MAX_SPEED)/ACCEL;
+    if(length<BASE_ACCEL_LENGTH){
+        expected_time = sqrt(2.0*length/ACCEL);
+    }else{
+        double ACCEL_TIME = 2.0*MAX_SPEED/ACCEL;
+        expected_time = ((length-BASE_ACCEL_LENGTH)/MAX_SPEED)+ACCEL_TIME;
+    }
+    expected_time *= 1000000;// convert from s to micros
+
+    uint64_t start_time = pros::micros();
+    uint64_t current_time = 0;
+    uint64_t current_state = 0;
+
+    
+    while(true){
+        current_time = pros::micros() - start_time;
+        current_state = n*current_time/expected_time;
+        MotionStepCommand current_command(stepCommands.Steps[current_state]);
+
+        left_angle = wrapAngle(getNormalizedSensorAngle(left_rotation_sensor)-90.0)*TO_RADIANS;
+        right_angle = wrapAngle(getNormalizedSensorAngle(right_rotation_sensor)-90.0)*TO_RADIANS;
+        current_left_vector = vector3D(cos(left_angle),sin(left_angle),0.0);
+        current_right_vector = vector3D(cos(right_angle),sin(right_angle),0.0);
+
+        current_l_velocity = ((luA.get_actual_velocity()+luB.get_actual_velocity()+llA.get_actual_velocity()+llB.get_actual_velocity())/4.0);
+        current_r_velocity = ((ruA.get_actual_velocity()+ruB.get_actual_velocity()+rlA.get_actual_velocity()+rlB.get_actual_velocity())/4.0);
+        
+        v_left = vector3D(sin(current_command.Lpivot), cos(current_command.Lpivot)) * current_command.Lmove;
+        v_right = vector3D(sin(current_command.Rpivot), cos(current_command.Rpivot)) * current_command.Rmove;
+
+        bool reverse_right = false;
+        bool reverse_left = false;
+        
+        // check if the angle is obtuse
+        if (v_left * current_left_vector < 0){  
+            // reverse if angle is obtuse for shorter rotation
+            v_left = -v_left;
+            reverse_left = true;
+        }
+
+        if (v_right * current_right_vector < 0){  
+            // reverse if angle is obtuse for shorter rotation
+            v_right = -v_right;
+            reverse_right = true;
+        }
+
+        v_right_velocity = SPEED_TO_RPM* TRANSLATE_RATIO*(v_right*current_right_vector);
+        v_left_velocity = SPEED_TO_RPM* TRANSLATE_RATIO*(v_left*current_left_vector);
+
+        if(reverse_left){
+            v_left_velocity = -v_left_velocity;
+        }
+
+        if(reverse_right){
+            v_right_velocity = -v_right_velocity;
+        }
+
+        // calculate the error angle
+        l_error = angle(current_left_vector, v_left);
+        r_error = angle(current_right_vector, v_right);
+        if (std::isnan(l_error) || std::isnan(r_error)) {
+            l_error = 0.0; r_error = 0.0;
+        }
+
+        //calculate the wheel error
+        current_l_tl_error = (v_left_velocity-current_l_velocity);
+        current_r_tl_error = (v_right_velocity-current_r_velocity);
+
+        l_velocity_pid += left_velocity_PID.step(current_l_tl_error);
+        r_velocity_pid += right_velocity_PID.step(current_r_tl_error);
+
+        // calculate the PID output
+        l_angle_pid = left_angle_PID.step(l_error);
+        r_angle_pid = right_angle_PID.step(r_error);
+
+        lscale = scale * ((1.0-base_v)*fabs((l_error))+base_v);
+        rscale = scale * ((1.0-base_v)*fabs((r_error))+base_v);
+
+        lu = (int32_t)std::clamp(lscale * (l_velocity_pid + l_angle_pid), -MAX_VOLTAGE, MAX_VOLTAGE); //this side seems less powerful on the robot
+        ll = (int32_t)std::clamp(lscale * (l_velocity_pid - l_angle_pid), -MAX_VOLTAGE, MAX_VOLTAGE);
+        ru = (int32_t)std::clamp(rscale * (r_velocity_pid + r_angle_pid), -MAX_VOLTAGE, MAX_VOLTAGE);
+        rl = (int32_t)std::clamp(rscale * (r_velocity_pid - r_angle_pid), -MAX_VOLTAGE, MAX_VOLTAGE);
+    
+
+        luA.move_voltage(lu);
+        luB.move_voltage(lu);
+
+        llA.move_voltage(ll);
+        llB.move_voltage(ll);
+
+        ruA.move_voltage(ru);
+        ruB.move_voltage(ru);
+
+        rlA.move_voltage(rl);
+        rlB.move_voltage(rl);
+    
+        pros::Task::delay(1);
+    }
+
+}
+
+void autonomous(){
+    move_auton(vector3D(1000,1000, 0.3));
+}
+
 void initialize(){
-  pros::lcd::initialize();
-  luA.set_brake_mode(MOTOR_BRAKE_BRAKE);
+    pros::lcd::initialize();
+    luA.set_brake_mode(MOTOR_BRAKE_BRAKE);
     luB.set_brake_mode(MOTOR_BRAKE_BRAKE);
     llA.set_brake_mode(MOTOR_BRAKE_BRAKE);
     llB.set_brake_mode(MOTOR_BRAKE_BRAKE);
@@ -371,17 +579,18 @@ void initialize(){
     liftL.set_brake_mode(MOTOR_BRAKE_HOLD);
     liftR.set_brake_mode(MOTOR_BRAKE_HOLD);
 
-  while(!left_rotation_sensor.reset());
+    while(!left_rotation_sensor.reset());
     while(!right_rotation_sensor.reset());
 
-  left_rotation_sensor.set_data_rate(5);
+    left_rotation_sensor.set_data_rate(5);
     right_rotation_sensor.set_data_rate(5);
 
-  left_rotation_sensor.set_position(0);
+    left_rotation_sensor.set_position(0);
     right_rotation_sensor.set_position(0);
 
-  
-    pros::Task move_base(moveBase);
+    //move_auton(vector3D(1000,1000, 0.3));
+
+    //pros::Task move_base(moveBase);
     //pros::Task serial_read(serialRead);
 
   master.clear();
@@ -392,6 +601,7 @@ void opcontrol(){
     leftX = master.get_analog(ANALOG_LEFT_X);
     leftY = master.get_analog(ANALOG_LEFT_Y);
     rightX = master.get_analog(ANALOG_RIGHT_X);
+    if(master.get_digital_new_press(DIGITAL_B)) autonomous();
     pros::delay(5);
   }
 }
