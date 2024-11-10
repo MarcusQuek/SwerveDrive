@@ -123,11 +123,11 @@ double angle(vector3D v1, vector3D v2){
     return -atan2(det, dot);
 }
 
-double max(double a, double b) {
+double max(double a, double b) { //returns the larger of two doubles
     return (a > b)? a : b;
 }
 
-double min(double a, double b) {
+double min(double a, double b) { //returns the smaller of two doubles
     return (a < b)? a : b;
 }
 
@@ -240,19 +240,17 @@ void moveBase(){
         v_left = target_v - rotational_v_vector;
         v_right = target_v + rotational_v_vector;
 
+        //even though we reset these booleans every loop, it should be ok because we always reevaluate whether the wheels should reverse
         bool reverse_right = false;
         bool reverse_left = false;
         
-        // check if the angle is obtuse
-        if (v_left * current_left_vector < 0){  
-            // reverse if angle is obtuse for shorter rotation
-            v_left = -v_left;
+        //evaluate if we need to reverse one or both wheels
+        if (v_left * current_left_vector < 0){  // check if the angle is obtuse
+            v_left = -v_left; // reverse if angle is obtuse for shorter rotation
             reverse_left = true;
         }
-
-        if (v_right * current_right_vector < 0){  
-            // reverse if angle is obtuse for shorter rotation
-            v_right = -v_right;
+        if (v_right * current_right_vector < 0){  // check if the angle is obtuse
+            v_right = -v_right; // reverse if angle is obtuse for shorter rotation
             reverse_right = true;
         }
 
@@ -286,11 +284,31 @@ void moveBase(){
         lscale = scale * ((1.0 - base_v) * fabs(l_error) + base_v);
         rscale = scale * ((1.0 - base_v) * fabs(r_error) + base_v);
 
-        lu = (int32_t)std::clamp(lscale * (l_velocity_pid + l_angle_pid), -MAX_VOLTAGE, MAX_VOLTAGE); //this side seems less powerful on the robot
-        ll = (int32_t)std::clamp(lscale * (l_velocity_pid - l_angle_pid), -MAX_VOLTAGE, MAX_VOLTAGE);
-        ru = (int32_t)std::clamp(rscale * (r_velocity_pid + r_angle_pid), -MAX_VOLTAGE, MAX_VOLTAGE);
-        rl = (int32_t)std::clamp(rscale * (r_velocity_pid - r_angle_pid), -MAX_VOLTAGE, MAX_VOLTAGE);
-
+        //calculate voltages required to run each motor, and scale them into the acceptable voltage range so they dont exceed max voltage
+        //we have to scale the voltages because if we don't, it can happen that one or more motors dont move as fast as we expected because we ordered it to move
+        //at a higher voltage than it can physically achieve, and this will throw off the proportions of velocity of the four motor pairs, and cause the robot
+        //to move in unexpected ways. Scaling means that sometimes the robot moves slower than expected, but at least it moves correctly otherwise.
+        lu = (int32_t)(lscale * (l_velocity_pid + l_angle_pid));//this side seems less powerful on the robot
+        ll = (int32_t)(lscale * (l_velocity_pid - l_angle_pid));
+        ru = (int32_t)(rscale * (r_velocity_pid + r_angle_pid));
+        rl = (int32_t)(rscale * (r_velocity_pid - r_angle_pid));
+        //if any of lu, ll, ru or rl are too big, we need to scale them, and we must scale them all by the same amount so we dont throw off the proportions
+        if(fabs(lu) > MAX_VOLTAGE || fabs(ll) > MAX_VOLTAGE || fabs(ru) > MAX_VOLTAGE || fabs(rl) > MAX_VOLTAGE)
+        {
+            //figure out which of lu, ll, ru or rl has the largest magnitude
+            double max = fabs(lu);
+            if(max < fabs(ll))
+                max = fabs(ll);
+            if(max < fabs(ru))
+                max = fabs(ru);
+            if(max < fabs(rl))
+                max = fabs(rl);
+            double VoltageScalingFactor = max / MAX_VOLTAGE; //this will definitely be positive, hence it wont change the sign of lu, ll, ru or rl.
+            lu = lu / VoltageScalingFactor;
+            ll = ll / VoltageScalingFactor;
+            ru = ru / VoltageScalingFactor;
+            rl = rl / VoltageScalingFactor;
+        }
 
         luA.move_voltage(lu);
         luB.move_voltage(lu);
@@ -430,11 +448,13 @@ void move_auton(vector3D delta, vector3D velocity = vector3D(0, 0, 0)){
     double expected_time = 0;
     double mt[5] = {0};
     mt[3] = -delta.z;   // Set the m(t) to -m_end*t
-    //finding total length
-    double length = 0;  // in mm
+
+    //finding total length of the path by splitting the path into many subdivisions of tiny length, approximating each subdivision as a straight line and adding them all up
+    //the greater the number of subdivisions, the more expensive the length calculation is but the more accurate the approximation
+    double length = 0;  //measured in millimeters
     double t, T;
     const int n = 10000; //number of subdivisions of the function
-    StepCommandList stepCommands = GenerateHermitePath(start_pos, delta, start_velocity, velocity, (1.0 / n), mt);
+    StepCommandList stepCommands = GenerateHermitePath(start_pos, delta, start_velocity, velocity, (1.0 / n), mt); //generate the list of step commands for the robot to follow to produce the path
     for (int i = 1; i < n; i++) {
         t = static_cast<double>(i) / n;
         T = static_cast<double>(i - 1) / n;
@@ -442,73 +462,77 @@ void move_auton(vector3D delta, vector3D velocity = vector3D(0, 0, 0)){
         vector3D v2((stepCommands.cax * std::pow(T, 3) + stepCommands.cbx * std::pow(T, 2) + stepCommands.ccx * T + stepCommands.cdx), stepCommands.cay * std::pow(T, 3) + stepCommands.cby * std::pow(T, 2) + stepCommands.ccy * T + stepCommands.cdy);
         length += (v1 - v2).magnitude();
     }
-    double BASE_ACCEL_LENGTH = (MAX_SPEED * MAX_SPEED)/ACCEL;
+
+    //calculate the max distance over the robot must travel while accelerating to max speed
+    //derivation: v^2 = u^2 + 2as (This is one of the kinematics equations that all physical objects follow. v is final velocity, u is initial velocity, a is accel and s is the distance of the motion)
+    //thus, (v^2)/a = u^2 + 2s
+    //thus, assuming initial velocity is zero (assuming the worst case scenario), (v^2)/a = 2s
+    double BASE_ACCEL_LENGTH = (MAX_SPEED * MAX_SPEED)/ACCEL; 
     if(length < BASE_ACCEL_LENGTH)
         expected_time = sqrt(2.0 * length / ACCEL);
     else{
         double ACCEL_TIME = 2.0 * MAX_SPEED/ACCEL;
         expected_time = ((length - BASE_ACCEL_LENGTH) / MAX_SPEED) + ACCEL_TIME;
     }
-    expected_time *= 1000000;// convert from s to micros
+    expected_time *= 1000000;// convert from seconds to microseconds
 
-    uint64_t start_time = pros::micros();
+    //implement async delay
+    uint64_t start_time = pros::micros(); //get the current time (pros::micros returns a value equal to the number of microseconds that have passed since the code started running)
     uint64_t current_time = 0;
     uint64_t current_state = 0;
 
     
     while(true){
-        current_time = pros::micros() - start_time;
+        current_time = pros::micros() - start_time; 
         current_state = n * current_time / expected_time;
         MotionStepCommand current_command(stepCommands.Steps[current_state]);
 
+        //find the current state of the wheels angle (and hence find the direction of the wheels) and find the wheels current velocity
         left_angle = wrapAngle(getNormalizedSensorAngle(left_rotation_sensor) - 90.0) * TO_RADIANS;
         right_angle = wrapAngle(getNormalizedSensorAngle(right_rotation_sensor) - 90.0) * TO_RADIANS;
         current_left_vector = vector3D(cos(left_angle), sin(left_angle), 0.0);
         current_right_vector = vector3D(cos(right_angle), sin(right_angle), 0.0);
-
         current_l_velocity = ((luA.get_actual_velocity() + luB.get_actual_velocity() + llA.get_actual_velocity() + llB.get_actual_velocity()) / 4.0);
         current_r_velocity = ((ruA.get_actual_velocity() + ruB.get_actual_velocity() + rlA.get_actual_velocity() + rlB.get_actual_velocity()) / 4.0);
         
+        //find the target velocity of the wheels
         v_left = vector3D(sin(current_command.Lpivot), cos(current_command.Lpivot)) * current_command.Lmove;
         v_right = vector3D(sin(current_command.Rpivot), cos(current_command.Rpivot)) * current_command.Rmove;
 
+        //even though we reset these booleans every loop, it should be ok because we always reevaluate whether the wheels should reverse
         bool reverse_right = false;
         bool reverse_left = false;
         
-        // check if the angle is obtuse
-        if (v_left * current_left_vector < 0){  
-            // reverse if angle is obtuse for shorter rotation
-            v_left = -v_left;
+        //evaluate if we need to reverse one or both wheels
+        if (v_left * current_left_vector < 0){  // check if the angle is obtuse
+            v_left = -v_left; // reverse if angle is obtuse for shorter rotation
             reverse_left = true;
         }
-
-        if (v_right * current_right_vector < 0){  
-            // reverse if angle is obtuse for shorter rotation
-            v_right = -v_right;
+        if (v_right * current_right_vector < 0){  // check if the angle is obtuse
+            v_right = -v_right; // reverse if angle is obtuse for shorter rotation
             reverse_right = true;
         }
 
-        v_right_velocity = SPEED_TO_RPM * TRANSLATE_RATIO * (v_right * current_right_vector);
-        v_left_velocity = SPEED_TO_RPM * TRANSLATE_RATIO * (v_left * current_left_vector);
+        v_right_velocity = SPEED_TO_RPM * TRANSLATE_RATIO * v_right * current_right_vector;
+        v_left_velocity = SPEED_TO_RPM * TRANSLATE_RATIO * v_left * current_left_vector;
 
-        if(reverse_left){
+        if(reverse_left)
             v_left_velocity = -v_left_velocity;
-        }
-
-        if(reverse_right){
+        if(reverse_right)
             v_right_velocity = -v_right_velocity;
-        }
 
         // calculate the error angle
         l_error = angle(current_left_vector, v_left);
         r_error = angle(current_right_vector, v_right);
-        if (std::isnan(l_error) || std::isnan(r_error)) {
-            l_error = 0.0; r_error = 0.0;
+        if (std::isnan(l_error) || std::isnan(r_error)) 
+        {
+            l_error = 0.0; 
+            r_error = 0.0;
         }
-
+            
         //calculate the wheel error
-        current_l_tl_error = (v_left_velocity-current_l_velocity);
-        current_r_tl_error = (v_right_velocity-current_r_velocity);
+        current_l_tl_error = (v_left_velocity - current_l_velocity);
+        current_r_tl_error = (v_right_velocity - current_r_velocity);
 
         l_velocity_pid += left_velocity_PID.step(current_l_tl_error);
         r_velocity_pid += right_velocity_PID.step(current_r_tl_error);
