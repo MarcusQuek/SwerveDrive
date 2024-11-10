@@ -27,7 +27,7 @@ class PID
         }
 
         double step(double error){
-            if(time_prev==-1){
+            if(time_prev == -1){
                 time_prev = pros::micros();
                 return 0.0;
             }
@@ -52,10 +52,9 @@ class PID
             if (__builtin_signbitf(error_now) != __builtin_signbitf(error_prev)) error_int = 0.0;
 
             // calculate the D term
-            double dterm = (kD*error_now - kD*error_prev) / dt;
+            double dterm = (kD * error_now - kD * error_prev) / dt;
 
             // calculate the PID output
-            double pid = 10.0* (kP*error_now + kI*error_int + dterm);
-            return pid;
+            return pid = 10.0 * (kP * error_now + kI * error_int + dterm);
         }
 };

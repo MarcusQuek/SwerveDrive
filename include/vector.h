@@ -37,42 +37,42 @@ public:
     }
 
     double magnitude(){
-        return sqrt(x*x+y*y);
+        return sqrt(x * x + y * y);
     }
 
     vector3D scalar(double a){
-        return vector3D(x*a,y*a,z*a);
+        return vector3D(x * a, y * a, z * a);
     }
     
     vector3D operator+ (vector3D &obj){
-        return vector3D(x+obj.x,y+obj.y,z+obj.z);
+        return vector3D(x + obj.x, y + obj.y, z + obj.z);
     }
 
     vector3D operator- (vector3D &obj){
-        return vector3D(x-obj.x,y-obj.y,z-obj.z);
+        return vector3D(x - obj.x,y - obj.y,z - obj.z);
     }
     vector3D operator- (){
-        return vector3D(-x,-y,-z);
+        return vector3D(-x, -y, -z);
     }
 
     double operator* (vector3D &obj){
-        return (x*obj.x+y*obj.y+z*obj.z);
+        return (x * obj.x + y * obj.y + z * obj.z);
     }
 
     vector3D operator* (double scalar){
-        return vector3D(x*scalar,y*scalar,z*scalar);
+        return vector3D(x * scalar, y * scalar, z * scalar);
     }
 
     vector3D operator^ (vector3D &obj){
-        return vector3D(y*obj.z-obj.y*z,z*obj.x-obj.z*x,x*obj.y-obj.x*y);
+        return vector3D(y * obj.z - obj.y * z, z * obj.x - obj.z * x, x * obj.y - obj.x * y);
     }
 
     double getAngle(){
-        if(x==0 && y==0){
-            return 1000;
+        if(x == 0 && y == 0){
+            return NAN;
         }
         else{
-            return atan2(y,x);
+            return atan2(y, x);
         }
     }
 };

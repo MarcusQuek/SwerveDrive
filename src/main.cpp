@@ -78,14 +78,14 @@ double wrapAngle(double angle){ //forces the angle to be within the -180 < angle
     return angle;
 }
 
-vector3D normalizeJoystick(int x_in, int y_in){
-    double angle = atan2(y_in, x_in) * TO_DEGREES;
+vector3D normalizeJoystick(int x_in, int y_in){ //convert translation joystick input to polar vector
+    double angle = atan2(y_in, x_in) * TO_DEGREES; //angle of translation polar vector
     double scaleLength;
-    double magnitude;
+    double magnitude; //magnitude of translation polar vector
     double length = sqrt(x_in * x_in + y_in * y_in);
     vector3D out;
-    if(length < DEADBAND){
-        out.load(0.0, 0.0, 0.0);
+    if(length < DEADBAND){ //if the joystick is too close to the origin, dont bother moving (this is to correct for stick drift, where the joystick doesnt default to the 0,0 position due to physical damage)
+        out.load(0.0, 0.0, 0.0); //assign zero values to the xyz attributes of the vector3D named "out"
         return out;
     }
     //use CSC or SEC as required
@@ -94,25 +94,25 @@ vector3D normalizeJoystick(int x_in, int y_in){
     else
         scaleLength = 127.0 / cos(angle * TO_RADIANS);
     
-    scaleLength = fabs(scaleLength) - DEADBAND;
-    magnitude = (length - DEADBAND) / scaleLength;
+    scaleLength = fabs(scaleLength) - DEADBAND; //force scaleLength to be positive and subtract deadband
+    magnitude = (length - DEADBAND) / scaleLength; //find magnitude of translation vector and scale it down (note that magnitude will always be positive)
     
-    out.load(magnitude * cos(angle * TO_RADIANS), magnitude * sin(angle * TO_RADIANS), 0.0);
+    out.load(magnitude * cos(angle * TO_RADIANS), magnitude * sin(angle * TO_RADIANS), 0.0); //assign values to the xyz attributes of the vector3D named "out"
     return out;
 }
 
-vector3D normalizeRotation(int x_in){
+vector3D normalizeRotation(int x_in){ //get rotation speed from rotation joystick
     vector3D out;
     double scaleLength = 127.0 - DEADBAND;
-    if(abs(x_in) < DEADBAND){
-        out.load(0.0, 0.0, 0.0);
+    if(abs(x_in) < DEADBAND){ //if the joystick is too close to the origin, dont bother moving (this is to correct for stick drift, where the joystick doesnt default to the 0,0 position due to physical damage)
+        out.load(0.0, 0.0, 0.0); //assign values to the xyz attributes of the vector3D named "out"
         return out;
     }
-    double value = (abs(x_in) - DEADBAND) / scaleLength;
+    double value = (abs(x_in) - DEADBAND) / scaleLength; //find magnitude of rotation and scale it down
     if(x_in < 0){
         value = value * -1.0;
     }
-    out.load(0.0, 0.0, value);
+    out.load(0.0, 0.0, value); //assign values to the xyz attributes of the vector3D named "out"
     return -out;
 }
 
@@ -198,16 +198,18 @@ void moveBase(){
         current_angular = (current_l_velocity * sin(left_angle) + current_r_velocity * sin(right_angle)) / (2.0 * WHEEL_BASE_RADIUS);
         average_x_v = ((current_l_velocity * cos(left_angle)) + (current_r_velocity * cos(right_angle))) / 2.0;
         average_y_v = ((current_l_velocity * sin(left_angle)) + (current_r_velocity * sin(right_angle))) / 2.0;
-        current_tl_velocity.load(average_x_v, average_y_v, 0.0);
+        current_tl_velocity.load(average_x_v, average_y_v, 0.0); //assign values to the xyz attributes of the vector3D named "current_tl_velocity"
 
         prev_target_v = target_v;
         prev_target_r = target_r;
         // TODO: switch PID to go for target angle, switch actual to use current sensor angle
         target_v = normalizeJoystick(-leftX, -leftY).scalar(MAX_SPEED);
-        target_r = normalizeRotation(rightX).scalar(MAX_ANGULAR);
+        target_r = normalizeRotation(rightX).scalar(MAX_ANGULAR); //multiply normaliseRotation(rightX) by the scalar factor MAX_ANGULAR
 
+        //update micros_prev and micros_now
         micros_prev = micros_now;
         micros_now = pros::micros();
+
         dt = micros_now-micros_prev;
         v_fterm = (target_v - prev_target_v) * (v_kF / dt);
         r_fterm = (target_r - prev_target_r) * (r_kF / dt);
@@ -318,8 +320,8 @@ struct StepCommandList{ //contains the list of commands for the base to follow i
 
 void GetNextStep(std::vector<MotionStepCommand>& Steps, vector3D CurrentRobotPosition, double CurrentRobotOrientation, vector3D PreviousLeftWheelPosition, vector3D PreviousRightWheelPosition) {
     //apply definition of L(t) and R(t) to get current left and right wheel position
-    vector3D left_displacement(std::sin(CurrentRobotOrientation) * (WHEEL_BASE_RADIUS * 2.0) / 2, std::cos(CurrentRobotOrientation) * (WHEEL_BASE_RADIUS * 2.0) / 2);
-    vector3D right_displacement(std::sin(CurrentRobotOrientation) * (WHEEL_BASE_RADIUS * 2.0) / 2, std::cos(CurrentRobotOrientation) * (WHEEL_BASE_RADIUS * 2.0) / 2);
+    vector3D left_displacement(std::sin(CurrentRobotOrientation) * WHEEL_BASE_RADIUS, std::cos(CurrentRobotOrientation) * WHEEL_BASE_RADIUS);
+    vector3D right_displacement(std::sin(CurrentRobotOrientation) * WHEEL_BASE_RADIUS, std::cos(CurrentRobotOrientation) * WHEEL_BASE_RADIUS);
     vector3D CurrentLeftWheelPosition = CurrentRobotPosition + left_displacement;
     vector3D CurrentRightWheelPosition = CurrentRobotPosition + right_displacement;
 
@@ -339,10 +341,11 @@ StepCommandList GenerateHermitePath(vector3D pStart, vector3D pEnd, vector3D vSt
  
     StepCommandList StepCL; //this list will store all the step motion data that causes the robot to execute the path
 
+    //THIS PRODUCES THE HERMITE SPLINE COEFFICIENTS. THESE ARE NOT CONSTANTS FOR YOU TO TUNE. DO NOT CHANGE THESE CONSTANTS.
     StepCL.cax = 2 * pStart.x + vStart.x - 2 * pEnd.x + vEnd.x;
     StepCL.cay = 2 * pStart.y + vStart.y - 2 * pEnd.y + vEnd.y;
     StepCL.cbx = -3 * pStart.x - 2 * vStart.x + 3 * pEnd.x - vEnd.x;
-    StepCL.cby =  -3 * pStart.y - 2 * vStart.y + 3 * pEnd.y - vEnd.y;
+    StepCL.cby = -3 * pStart.y - 2 * vStart.y + 3 * pEnd.y - vEnd.y;
     StepCL.ccx = vStart.x;
     StepCL.ccy = vStart.y;
     StepCL.cdx = pStart.x;
@@ -360,8 +363,8 @@ StepCommandList GenerateHermitePath(vector3D pStart, vector3D pEnd, vector3D vSt
     double CurrentRobotOrientation = vector3D(vStart).getAngle();
     double mEnd = vEnd.getAngle();
 
-    vector3D previous_left_displacement(std::sin(CurrentRobotOrientation) * (WHEEL_BASE_RADIUS*2.0) / 2, std::cos(CurrentRobotOrientation) * (WHEEL_BASE_RADIUS*2.0) / 2);
-    vector3D previous_right_displacement(-std::sin(CurrentRobotOrientation) * (WHEEL_BASE_RADIUS*2.0) / 2, -std::cos(CurrentRobotOrientation) * (WHEEL_BASE_RADIUS*2.0) / 2);
+    vector3D previous_left_displacement(std::sin(CurrentRobotOrientation) * WHEEL_BASE_RADIUS, std::cos(CurrentRobotOrientation) * WHEEL_BASE_RADIUS);
+    vector3D previous_right_displacement(-std::sin(CurrentRobotOrientation) * WHEEL_BASE_RADIUS, -std::cos(CurrentRobotOrientation) * WHEEL_BASE_RADIUS);
     vector3D PreviousLeftWheelPosition = CurrentRobotPosition + previous_left_displacement;
     vector3D PreviousRightWheelPosition = CurrentRobotPosition + previous_right_displacement;
     for (float t = StepLength; t < 1; t += StepLength) {
@@ -537,7 +540,6 @@ void move_auton(vector3D delta, vector3D velocity = vector3D(0, 0, 0)){
     
         pros::Task::delay(1);
     }
-
 }
 
 void autonomous(){
