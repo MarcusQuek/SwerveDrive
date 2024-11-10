@@ -21,7 +21,7 @@ void serialRead(void* params){
         if(nRead >= 0){
             std::stringstream dataStream("");
             bool recordOpticalX, recordOpticalY = false;
-            for(int i=0;i<nRead;i++){
+            for(int i = 0;i < nRead; i++){
                 char thisDigit = (char)buffer[i];
                 if(thisDigit == 'D' || thisDigit == 'I' || thisDigit == 'A' || thisDigit == 'X'||  thisDigit == 'C'||  thisDigit == 'Y'){
                     recordOpticalX = false;
@@ -51,7 +51,7 @@ void serialRead(void* params){
     }
 }
 
-void brake(){
+void brake(){ //brakes all base motors
     luA.brake();
     ruA.brake();
     luB.brake();
@@ -63,72 +63,62 @@ void brake(){
     pros::delay(1);
 }
 
-//Converts rotational sensor readings into degrees and bounds it between -180 to 180
-double getNormalizedSensorAngle(pros::Rotation &sensor){
+double getNormalizedSensorAngle(pros::Rotation &sensor){ //Converts rotational sensor readings into degrees and bounds it between -180 to 180
     double angle = sensor.get_angle() / 100.0; //Convert from centidegrees to degrees
-
-    if (angle < -180)
-        angle += 360;
-    else if (angle > 180)
-        angle -= 360;
-
-    return angle;
+    return wrapAngle(angle); //forces the angle to be within the -180 < angle < 180 range
 }
 
-double wrapAngle(double angle){
-    if (angle > 180.0){
-        while (angle>180.0){
+double wrapAngle(double angle){ //forces the angle to be within the -180 < angle < 180 range
+    if (angle > 180.0)
+        while (angle > 180.0)
             angle -= 360.0;
-        }
-    }else if (angle < -180.0){
-        while (angle< -180.0){
-            angle += 360.0;
-        }
-    }    
+    else if (angle < -180.0)
+        while (angle< -180.0)
+            angle += 360.0;  
     return angle;
 }
 
 vector3D normalizeJoystick(int x_in, int y_in){
-    double angle = atan2(y_in,x_in) * TO_DEGREES;
+    double angle = atan2(y_in, x_in) * TO_DEGREES;
     double scaleLength;
     double magnitude;
-    double length = sqrt(x_in*x_in*1.0+y_in*y_in*1.0);
+    double length = sqrt(x_in * x_in + y_in * y_in);
     vector3D out;
-    if(length<DEADBAND){
-        out.load(0.0,0.0,0.0);
+    if(length < DEADBAND){
+        out.load(0.0, 0.0, 0.0);
         return out;
     }
     //use CSC or SEC as required
-    if((angle>45.0  && angle< 135.0) || (angle<-45.0 && angle> -135.0)){
-        scaleLength = 127.0/sin(angle*TO_RADIANS);
-    }else{
-        scaleLength = 127.0/cos(angle*TO_RADIANS);
-    }
-    scaleLength = fabs(scaleLength)-DEADBAND;
-    magnitude = (length-DEADBAND)/scaleLength;
+    if((angle > 45.0  && angle < 135.0) || (angle < -45.0 && angle > -135.0))
+        scaleLength = 127.0 / sin(angle * TO_RADIANS);
+    else
+        scaleLength = 127.0 / cos(angle * TO_RADIANS);
     
-    out.load(magnitude*cos(angle*TO_RADIANS),magnitude*sin(angle*TO_RADIANS),0.0);
+    scaleLength = fabs(scaleLength) - DEADBAND;
+    magnitude = (length - DEADBAND) / scaleLength;
+    
+    out.load(magnitude * cos(angle * TO_RADIANS), magnitude * sin(angle * TO_RADIANS), 0.0);
     return out;
 }
 
 vector3D normalizeRotation(int x_in){
     vector3D out;
-    double scaleLength = 127.0-DEADBAND;
-    if(abs(x_in)<DEADBAND){
-        out.load(0.0,0.0,0.0);
+    double scaleLength = 127.0 - DEADBAND;
+    if(abs(x_in) < DEADBAND){
+        out.load(0.0, 0.0, 0.0);
         return out;
     }
-    double value = (abs(x_in)-DEADBAND)/scaleLength;
-    if(x_in<0){
+    double value = (abs(x_in) - DEADBAND) / scaleLength;
+    if(x_in < 0){
         value = value * -1.0;
     }
-    out.load(0.0,0.0,value);
+    out.load(0.0, 0.0, value);
     return -out;
 }
 
 
 double angle(vector3D v1, vector3D v2){
-    double dot = v1*v2;
+    double dot = v1 * v2;
     double det = v1.x * v2.y - v1.y * v2.x;
     return -atan2(det, dot);
 }
@@ -171,11 +161,11 @@ void moveBase(){
     double rscale = 0;
 
     double current_angular = 0.0;
-    vector3D current_tl_velocity(0,0,0);
-    vector3D prev_target_v(0,0,0);
-    vector3D prev_target_r(0,0,0);
-    vector3D v_fterm(0,0,0);
-    vector3D r_fterm(0,0,0);
+    vector3D current_tl_velocity(0, 0, 0);
+    vector3D prev_target_v(0, 0, 0);
+    vector3D prev_target_r(0, 0, 0);
+    vector3D v_fterm(0, 0, 0);
+    vector3D r_fterm(0, 0, 0);
     double average_x_v = 0;
     double average_y_v = 0;
 
@@ -195,21 +185,20 @@ void moveBase(){
     PID right_velocity_PID(velocity_kP, velocity_kI, velocity_kD);
     
 
-    vector3D L2I_pos(WHEEL_BASE_RADIUS,0.0,0.0);
+    vector3D L2I_pos(WHEEL_BASE_RADIUS, 0.0, 0.0);
     while(true){
+        left_angle = wrapAngle(getNormalizedSensorAngle(left_rotation_sensor) - 90.0) * TO_RADIANS;
+        right_angle = wrapAngle(getNormalizedSensorAngle(right_rotation_sensor) - 90.0) * TO_RADIANS;
+        current_left_vector = vector3D(cos(left_angle), sin(left_angle), 0.0);
+        current_right_vector = vector3D(cos(right_angle), sin(right_angle), 0.0);
 
-        left_angle = wrapAngle(getNormalizedSensorAngle(left_rotation_sensor)-90.0)*TO_RADIANS;
-        right_angle = wrapAngle(getNormalizedSensorAngle(right_rotation_sensor)-90.0)*TO_RADIANS;
-        current_left_vector = vector3D(cos(left_angle),sin(left_angle),0.0);
-        current_right_vector = vector3D(cos(right_angle),sin(right_angle),0.0);
+        current_l_velocity = ((luA.get_actual_velocity() + luB.get_actual_velocity() + llA.get_actual_velocity() + llB.get_actual_velocity()) / 4.0);
+        current_r_velocity = ((ruA.get_actual_velocity() + ruB.get_actual_velocity() + rlA.get_actual_velocity() + rlB.get_actual_velocity()) / 4.0);
 
-        current_l_velocity = ((luA.get_actual_velocity()+luB.get_actual_velocity()+llA.get_actual_velocity()+llB.get_actual_velocity())/4.0);
-        current_r_velocity = ((ruA.get_actual_velocity()+ruB.get_actual_velocity()+rlA.get_actual_velocity()+rlB.get_actual_velocity())/4.0);
-
-        current_angular = (current_l_velocity*sin(left_angle)+current_r_velocity*sin(right_angle))/(2.0*WHEEL_BASE_RADIUS);
-        average_x_v = ((current_l_velocity*cos(left_angle))+(current_r_velocity*cos(right_angle)))/2.0;
-        average_y_v = ((current_l_velocity*sin(left_angle))+(current_r_velocity*sin(right_angle)))/2.0;
-        current_tl_velocity.load(average_x_v,average_y_v,0.0);
+        current_angular = (current_l_velocity * sin(left_angle) + current_r_velocity * sin(right_angle)) / (2.0 * WHEEL_BASE_RADIUS);
+        average_x_v = ((current_l_velocity * cos(left_angle)) + (current_r_velocity * cos(right_angle))) / 2.0;
+        average_y_v = ((current_l_velocity * sin(left_angle)) + (current_r_velocity * sin(right_angle))) / 2.0;
+        current_tl_velocity.load(average_x_v, average_y_v, 0.0);
 
         prev_target_v = target_v;
         prev_target_r = target_r;
@@ -220,8 +209,8 @@ void moveBase(){
         micros_prev = micros_now;
         micros_now = pros::micros();
         dt = micros_now-micros_prev;
-        v_fterm = (target_v-prev_target_v)*(v_kF/dt);
-        r_fterm = (target_r-prev_target_r)*(r_kF/dt);
+        v_fterm = (target_v - prev_target_v) * (v_kF / dt);
+        r_fterm = (target_r - prev_target_r) * (r_kF / dt);
         target_v = target_v + v_fterm;
         target_r = target_r + r_fterm;
         
@@ -246,8 +235,8 @@ void moveBase(){
 
         rotational_v_vector = L2I_pos^target_r;
         
-        v_left = target_v-rotational_v_vector;
-        v_right = target_v+rotational_v_vector;
+        v_left = target_v - rotational_v_vector;
+        v_right = target_v + rotational_v_vector;
 
         bool reverse_right = false;
         bool reverse_left = false;
@@ -265,27 +254,25 @@ void moveBase(){
             reverse_right = true;
         }
 
-        v_right_velocity = SPEED_TO_RPM* TRANSLATE_RATIO*(v_right*current_right_vector);
-        v_left_velocity = SPEED_TO_RPM* TRANSLATE_RATIO*(v_left*current_left_vector);
+        v_right_velocity = SPEED_TO_RPM * TRANSLATE_RATIO * v_right * current_right_vector;
+        v_left_velocity = SPEED_TO_RPM * TRANSLATE_RATIO * v_left * current_left_vector;
 
-        if(reverse_left){
+        if(reverse_left)
             v_left_velocity = -v_left_velocity;
-        }
-
-        if(reverse_right){
+        if(reverse_right)
             v_right_velocity = -v_right_velocity;
-        }
-
+        
         // calculate the error angle
         l_error = angle(current_left_vector, v_left);
         r_error = angle(current_right_vector, v_right);
         if (std::isnan(l_error) || std::isnan(r_error)) {
-            l_error = 0.0; r_error = 0.0;
+            l_error = 0.0; 
+            r_error = 0.0;
         }
 
         //calculate the wheel error
-        current_l_tl_error = (v_left_velocity-current_l_velocity);
-        current_r_tl_error = (v_right_velocity-current_r_velocity);
+        current_l_tl_error = (v_left_velocity - current_l_velocity);
+        current_r_tl_error = (v_right_velocity - current_r_velocity);
 
         l_velocity_pid += left_velocity_PID.step(current_l_tl_error);
         r_velocity_pid += right_velocity_PID.step(current_r_tl_error);
@@ -294,14 +281,14 @@ void moveBase(){
         l_angle_pid = left_angle_PID.step(l_error);
         r_angle_pid = right_angle_PID.step(r_error);
 
-        lscale = scale * ((1.0-base_v)*fabs((l_error))+base_v);
-        rscale = scale * ((1.0-base_v)*fabs((r_error))+base_v);
+        lscale = scale * ((1.0 - base_v) * fabs(l_error) + base_v);
+        rscale = scale * ((1.0 - base_v) * fabs(r_error) + base_v);
 
         lu = (int32_t)std::clamp(lscale * (l_velocity_pid + l_angle_pid), -MAX_VOLTAGE, MAX_VOLTAGE); //this side seems less powerful on the robot
         ll = (int32_t)std::clamp(lscale * (l_velocity_pid - l_angle_pid), -MAX_VOLTAGE, MAX_VOLTAGE);
         ru = (int32_t)std::clamp(rscale * (r_velocity_pid + r_angle_pid), -MAX_VOLTAGE, MAX_VOLTAGE);
         rl = (int32_t)std::clamp(rscale * (r_velocity_pid - r_angle_pid), -MAX_VOLTAGE, MAX_VOLTAGE);
-    
+
 
         luA.move_voltage(lu);
         luB.move_voltage(lu);
@@ -321,26 +308,18 @@ void moveBase(){
 
 struct MotionStepCommand {
     double Lmove, Lpivot, Rmove, Rpivot;
-
     MotionStepCommand(double Lmove, double Lpivot, double Rmove, double Rpivot)
         : Lmove(Lmove), Lpivot(Lpivot), Rmove(Rmove), Rpivot(Rpivot) {}
 };
-struct StepCommandList{
+struct StepCommandList{ //contains the list of commands for the base to follow in order to produce the path, AND contains the eight hermite coefficients for the left and right wheels
     std::vector<MotionStepCommand> Steps;
-    double cax;
-    double cay;
-    double cbx;
-    double cby;
-    double ccx;
-    double ccy;
-    double cdx;
-    double cdy;
+    double cax, cay, cbx, cby, ccx, ccy, cdx, cdy;
 };
 
 void GetNextStep(std::vector<MotionStepCommand>& Steps, vector3D CurrentRobotPosition, double CurrentRobotOrientation, vector3D PreviousLeftWheelPosition, vector3D PreviousRightWheelPosition) {
     //apply definition of L(t) and R(t) to get current left and right wheel position
-    vector3D left_displacement(std::sin(CurrentRobotOrientation) * (WHEEL_BASE_RADIUS*2.0) / 2, std::cos(CurrentRobotOrientation) * (WHEEL_BASE_RADIUS*2.0) / 2);
-    vector3D right_displacement(std::sin(CurrentRobotOrientation) * (WHEEL_BASE_RADIUS*2.0) / 2, std::cos(CurrentRobotOrientation) * (WHEEL_BASE_RADIUS*2.0) / 2);
+    vector3D left_displacement(std::sin(CurrentRobotOrientation) * (WHEEL_BASE_RADIUS * 2.0) / 2, std::cos(CurrentRobotOrientation) * (WHEEL_BASE_RADIUS * 2.0) / 2);
+    vector3D right_displacement(std::sin(CurrentRobotOrientation) * (WHEEL_BASE_RADIUS * 2.0) / 2, std::cos(CurrentRobotOrientation) * (WHEEL_BASE_RADIUS * 2.0) / 2);
     vector3D CurrentLeftWheelPosition = CurrentRobotPosition + left_displacement;
     vector3D CurrentRightWheelPosition = CurrentRobotPosition + right_displacement;
 
@@ -398,8 +377,7 @@ StepCommandList GenerateHermitePath(vector3D pStart, vector3D pEnd, vector3D vSt
     return StepCL;
 }
 
-void move_auton(vector3D delta, vector3D velocity = vector3D(0,0,0)){
-    
+void move_auton(vector3D delta, vector3D velocity = vector3D(0, 0, 0)){
     int32_t lu;
     int32_t ll;
     int32_t ru;
@@ -437,15 +415,15 @@ void move_auton(vector3D delta, vector3D velocity = vector3D(0,0,0)){
     double r_velocity_pid = 0.0;
     double lscale = 0;
     double rscale = 0;
-    vector3D start_pos(0,0,0);
-    left_angle = wrapAngle(getNormalizedSensorAngle(left_rotation_sensor)-90.0)*TO_RADIANS;
-    right_angle = wrapAngle(getNormalizedSensorAngle(right_rotation_sensor)-90.0)*TO_RADIANS;
-    current_l_velocity = ((luA.get_actual_velocity()+luB.get_actual_velocity()+llA.get_actual_velocity()+llB.get_actual_velocity())/4.0);
-    current_r_velocity = ((ruA.get_actual_velocity()+ruB.get_actual_velocity()+rlA.get_actual_velocity()+rlB.get_actual_velocity())/4.0);
-    double current_angular = (current_l_velocity*sin(left_angle)+current_r_velocity*sin(right_angle))/(2.0*WHEEL_BASE_RADIUS);
-    double average_x_v = ((current_l_velocity*cos(left_angle))+(current_r_velocity*cos(right_angle)))/2.0;
-    double average_y_v = ((current_l_velocity*sin(left_angle))+(current_r_velocity*sin(right_angle)))/2.0;
-    vector3D start_velocity(average_x_v,average_y_v,current_angular);
+    vector3D start_pos(0, 0, 0);
+    left_angle = wrapAngle(getNormalizedSensorAngle(left_rotation_sensor) - 90.0) * TO_RADIANS;
+    right_angle = wrapAngle(getNormalizedSensorAngle(right_rotation_sensor) - 90.0) * TO_RADIANS;
+    current_l_velocity = ((luA.get_actual_velocity() + luB.get_actual_velocity() + llA.get_actual_velocity() + llB.get_actual_velocity()) / 4.0);
+    current_r_velocity = ((ruA.get_actual_velocity() + ruB.get_actual_velocity() + rlA.get_actual_velocity() + rlB.get_actual_velocity()) / 4.0);
+    double current_angular = (current_l_velocity * sin(left_angle)+current_r_velocity * sin(right_angle)) / (2.0 * WHEEL_BASE_RADIUS);
+    double average_x_v = ((current_l_velocity * cos(left_angle)) + (current_r_velocity * cos(right_angle))) / 2.0;
+    double average_y_v = ((current_l_velocity * sin(left_angle)) + (current_r_velocity * sin(right_angle))) / 2.0;
+    vector3D start_velocity(average_x_v, average_y_v, current_angular);
     double expected_time = 0;
     double mt[5] = {0};
     mt[3] = -delta.z;   // Set the m(t) to -m_end*t
@@ -453,20 +431,20 @@ void move_auton(vector3D delta, vector3D velocity = vector3D(0,0,0)){
     double length = 0;  // in mm
     double t, T;
     const int n = 10000; //number of subdivisions of the function
-    StepCommandList stepCommands = GenerateHermitePath(start_pos, delta, start_velocity, velocity, (1.0/n), mt);
+    StepCommandList stepCommands = GenerateHermitePath(start_pos, delta, start_velocity, velocity, (1.0 / n), mt);
     for (int i = 1; i < n; i++) {
         t = static_cast<double>(i) / n;
         T = static_cast<double>(i - 1) / n;
         vector3D v1(stepCommands.cax * std::pow(t, 3) + stepCommands.cbx * std::pow(t, 2) + stepCommands.ccx * t + stepCommands.cdx, stepCommands.cay * std::pow(t, 3) + stepCommands.cby * std::pow(t, 2) + stepCommands.ccy * t + stepCommands.cdy);
         vector3D v2((stepCommands.cax * std::pow(T, 3) + stepCommands.cbx * std::pow(T, 2) + stepCommands.ccx * T + stepCommands.cdx), stepCommands.cay * std::pow(T, 3) + stepCommands.cby * std::pow(T, 2) + stepCommands.ccy * T + stepCommands.cdy);
-        length += (v1-v2).magnitude();
+        length += (v1 - v2).magnitude();
     }
-    double BASE_ACCEL_LENGTH = (MAX_SPEED*MAX_SPEED)/ACCEL;
-    if(length<BASE_ACCEL_LENGTH){
-        expected_time = sqrt(2.0*length/ACCEL);
-    }else{
-        double ACCEL_TIME = 2.0*MAX_SPEED/ACCEL;
-        expected_time = ((length-BASE_ACCEL_LENGTH)/MAX_SPEED)+ACCEL_TIME;
+    double BASE_ACCEL_LENGTH = (MAX_SPEED * MAX_SPEED)/ACCEL;
+    if(length < BASE_ACCEL_LENGTH)
+        expected_time = sqrt(2.0 * length / ACCEL);
+    else{
+        double ACCEL_TIME = 2.0 * MAX_SPEED/ACCEL;
+        expected_time = ((length - BASE_ACCEL_LENGTH) / MAX_SPEED) + ACCEL_TIME;
     }
     expected_time *= 1000000;// convert from s to micros
 
@@ -477,16 +455,16 @@ void move_auton(vector3D delta, vector3D velocity = vector3D(0,0,0)){
     
     while(true){
         current_time = pros::micros() - start_time;
-        current_state = n*current_time/expected_time;
+        current_state = n * current_time / expected_time;
         MotionStepCommand current_command(stepCommands.Steps[current_state]);
 
-        left_angle = wrapAngle(getNormalizedSensorAngle(left_rotation_sensor)-90.0)*TO_RADIANS;
-        right_angle = wrapAngle(getNormalizedSensorAngle(right_rotation_sensor)-90.0)*TO_RADIANS;
-        current_left_vector = vector3D(cos(left_angle),sin(left_angle),0.0);
-        current_right_vector = vector3D(cos(right_angle),sin(right_angle),0.0);
+        left_angle = wrapAngle(getNormalizedSensorAngle(left_rotation_sensor) - 90.0) * TO_RADIANS;
+        right_angle = wrapAngle(getNormalizedSensorAngle(right_rotation_sensor) - 90.0) * TO_RADIANS;
+        current_left_vector = vector3D(cos(left_angle), sin(left_angle), 0.0);
+        current_right_vector = vector3D(cos(right_angle), sin(right_angle), 0.0);
 
-        current_l_velocity = ((luA.get_actual_velocity()+luB.get_actual_velocity()+llA.get_actual_velocity()+llB.get_actual_velocity())/4.0);
-        current_r_velocity = ((ruA.get_actual_velocity()+ruB.get_actual_velocity()+rlA.get_actual_velocity()+rlB.get_actual_velocity())/4.0);
+        current_l_velocity = ((luA.get_actual_velocity() + luB.get_actual_velocity() + llA.get_actual_velocity() + llB.get_actual_velocity()) / 4.0);
+        current_r_velocity = ((ruA.get_actual_velocity() + ruB.get_actual_velocity() + rlA.get_actual_velocity() + rlB.get_actual_velocity()) / 4.0);
         
         v_left = vector3D(sin(current_command.Lpivot), cos(current_command.Lpivot)) * current_command.Lmove;
         v_right = vector3D(sin(current_command.Rpivot), cos(current_command.Rpivot)) * current_command.Rmove;
@@ -507,8 +485,8 @@ void move_auton(vector3D delta, vector3D velocity = vector3D(0,0,0)){
             reverse_right = true;
         }
 
-        v_right_velocity = SPEED_TO_RPM* TRANSLATE_RATIO*(v_right*current_right_vector);
-        v_left_velocity = SPEED_TO_RPM* TRANSLATE_RATIO*(v_left*current_left_vector);
+        v_right_velocity = SPEED_TO_RPM * TRANSLATE_RATIO * (v_right * current_right_vector);
+        v_left_velocity = SPEED_TO_RPM * TRANSLATE_RATIO * (v_left * current_left_vector);
 
         if(reverse_left){
             v_left_velocity = -v_left_velocity;
@@ -536,8 +514,8 @@ void move_auton(vector3D delta, vector3D velocity = vector3D(0,0,0)){
         l_angle_pid = left_angle_PID.step(l_error);
         r_angle_pid = right_angle_PID.step(r_error);
 
-        lscale = scale * ((1.0-base_v)*fabs((l_error))+base_v);
-        rscale = scale * ((1.0-base_v)*fabs((r_error))+base_v);
+        lscale = scale * ((1.0 - base_v) * fabs(l_error) + base_v);
+        rscale = scale * ((1.0 - base_v) * fabs(r_error) + base_v);
 
         lu = (int32_t)std::clamp(lscale * (l_velocity_pid + l_angle_pid), -MAX_VOLTAGE, MAX_VOLTAGE); //this side seems less powerful on the robot
         ll = (int32_t)std::clamp(lscale * (l_velocity_pid - l_angle_pid), -MAX_VOLTAGE, MAX_VOLTAGE);
@@ -593,7 +571,7 @@ void initialize(){
     //pros::Task move_base(moveBase);
     //pros::Task serial_read(serialRead);
 
-  master.clear();
+    master.clear();
 }
 
 void opcontrol(){
