@@ -83,6 +83,9 @@ vector3D normalizeJoystick(int x_in, int y_in){ //convert translation joystick i
         out.load(0.0, 0.0, 0.0); //assign zero values to the xyz attributes of the vector3D named "out"
         return out;
     }
+    //forcing the joystick output to be a circle not the square bounding box of the joystick
+    //for any radial line of the circle, we find its length from the deadband radius to the radius of the circle of the joystick, then map the speed from 0 to 1 of that length
+    //this means that in any direction, we can reach our full range of speeds without being limited
     //use CSC or SEC as required
     if((angle > 45.0  && angle < 135.0) || (angle < -45.0 && angle > -135.0))
         scaleLength = 127.0 / sin(angle * TO_RADIANS);
@@ -107,6 +110,8 @@ vector3D normalizeRotation(int x_in){ //get rotation speed from rotation joystic
     if(x_in < 0){
         value = value * -1.0;
     }
+    //this is SUPPOSED to be a vector, its not wrong
+    //both normaliseRotation and normaliseJoystick return a vector for standardisation. This is intended behaviour.
     out.load(0.0, 0.0, value); //assign values to the xyz attributes of the vector3D named "out"
     return -out;
 }
@@ -127,47 +132,61 @@ double min(double a, double b) { //returns the smaller of two doubles
 }
 
 void moveBase(){
+    //numerical wheel rpm for each wheel
     double v_right_velocity;
     double v_left_velocity;
+    //numerical angle for each wheel in radisans -pi to pi
     double left_angle;
     double right_angle;
+    //-pi to pi target angle for pivoting
     double left_target_angle;
     double right_target_angle;
+    //angular v target for the robot, its the perpendicular vector that is added/subtracted from each side. later it gets automatically scale for the base widht changing by definition of cross product
     vector3D rotational_v_vector;
-    
+    //vector representation of each wheel velocity
     vector3D current_left_vector;
     vector3D current_right_vector;
-
+    //steering angle error
     double l_error = 0.0;
     double r_error = 0.0;
-
+    //actual velocity as measured
     double current_l_velocity = 0.0;
     double current_r_velocity = 0.0;
-    
+    //error in magnitudes from expected to actual v_right_velocity and left v
     double current_l_tl_error = 0.0;
     double current_r_tl_error = 0.0;
-
+    //power output for angle component of pid
     double l_angle_pid = 0.0;
     double r_angle_pid = 0.0;
-
+    //power output for translation component of pid
     double l_velocity_pid = 0.0;
     double r_velocity_pid = 0.0;
+    //scaling down the power depending on how wrong the wheel aiming angle is
+    //limited by base_v = 0.7 in definitions.h
     double lscale = 0;
     double rscale = 0;
-
+    //current angular v of the robot
     double current_angular = 0.0;
+    //current translational velocity vector of the robot
     vector3D current_tl_velocity(0, 0, 0);
+    //previous target translation vector
     vector3D prev_target_v(0, 0, 0);
+    //previous target rotation vector
     vector3D prev_target_r(0, 0, 0);
+    //feed forward for pid
+    //differentiate the control input (the joystick) to get rate of change of joystick
+    //if rate of change is huge, it causes the pid controller to return an abnormally large overcompensation
+    //this is done by artificially increasing the error amount when detecting large changes in input, reducing the time taken for the pid to converge
     vector3D v_fterm(0, 0, 0);
     vector3D r_fterm(0, 0, 0);
+    //placeholder values for x and y components of current translational v of the robot
     double average_x_v = 0;
     double average_y_v = 0;
 
     uint64_t micros_now = -1;
     
     uint64_t micros_prev = pros::micros();
-    uint64_t dt = -1;
+    uint64_t dt = -1; //f term for feed forward differentiation for rate of change 
 
     int32_t lu;
     int32_t ll;
@@ -179,7 +198,7 @@ void moveBase(){
     PID left_velocity_PID(velocity_kP, velocity_kI, velocity_kD);
     PID right_velocity_PID(velocity_kP, velocity_kI, velocity_kD);
     
-
+    //reference vector that points left with a magnitude of WHEEL_BASE_RADIUS
     vector3D L2I_pos(WHEEL_BASE_RADIUS, 0.0, 0.0);
     while(true){
         //get the current pivot angles of the left and right wheels in radians
@@ -192,16 +211,21 @@ void moveBase(){
         //we have to divide by four because the velocity of the wheel is the average of the speeds of the four motors for that wheel
         //we cannot just take one motor for each gear of each wheel, since each gear is powered by two motors which could be running at marginally different speeds
         //by taking readings from all four motors of each wheel, we get more accurate results
+        //just trust
         current_l_velocity = ((luA.get_actual_velocity() + luB.get_actual_velocity() + llA.get_actual_velocity() + llB.get_actual_velocity()) / 4.0);
         current_r_velocity = ((ruA.get_actual_velocity() + ruB.get_actual_velocity() + rlA.get_actual_velocity() + rlB.get_actual_velocity()) / 4.0);
 
         current_angular = (current_l_velocity * sin(left_angle) + current_r_velocity * sin(right_angle)) / (2.0 * WHEEL_BASE_RADIUS);
-        average_x_v = ((current_l_velocity * cos(left_angle)) + (current_r_velocity * cos(right_angle))) / 2.0;
-        average_y_v = ((current_l_velocity * sin(left_angle)) + (current_r_velocity * sin(right_angle))) / 2.0;
+
+        //velocity in x direction
+        average_x_v = (current_l_velocity * cos(left_angle) + current_r_velocity * cos(right_angle)) / 2.0;
+        //velocity in y direction
+        average_y_v = (current_l_velocity * sin(left_angle) + current_r_velocity * sin(right_angle)) / 2.0;
+        //current translation vector of the robot
         current_tl_velocity.load(average_x_v, average_y_v, 0.0); //assign values to the xyz attributes of the vector3D named "current_tl_velocity"
 
-        prev_target_v = target_v;
-        prev_target_r = target_r;
+        prev_target_v = target_v; //target translational v of the robot
+        prev_target_r = target_r; //target rotational v of the robot
         // TODO: switch PID to go for target angle, switch actual to use current sensor angle
         target_v = normalizeJoystick(-leftX, -leftY).scalar(MAX_SPEED);
         target_r = normalizeRotation(rightX).scalar(MAX_ANGULAR); //multiply normaliseRotation(rightX) by the scalar factor MAX_ANGULAR
@@ -235,7 +259,7 @@ void moveBase(){
         pros::lcd::print(3, "ra %3.3f", right_angle);
         }*/
 
-        rotational_v_vector = L2I_pos^target_r;
+        rotational_v_vector = L2I_pos^target_r; //cross product of L2I_pos (vector pointing to the left with a magnitude of WHEEL_BASE_RADIUS) and target_r
         
         v_left = target_v - rotational_v_vector;
         v_right = target_v + rotational_v_vector;
@@ -444,8 +468,8 @@ void move_auton(vector3D delta, vector3D velocity = vector3D(0, 0, 0)){
     current_l_velocity = ((luA.get_actual_velocity() + luB.get_actual_velocity() + llA.get_actual_velocity() + llB.get_actual_velocity()) / 4.0);
     current_r_velocity = ((ruA.get_actual_velocity() + ruB.get_actual_velocity() + rlA.get_actual_velocity() + rlB.get_actual_velocity()) / 4.0);
     double current_angular = (current_l_velocity * sin(left_angle) + current_r_velocity * sin(right_angle)) / (2.0 * WHEEL_BASE_RADIUS);
-    double average_x_v = ((current_l_velocity * cos(left_angle)) + (current_r_velocity * cos(right_angle))) / 2.0;
-    double average_y_v = ((current_l_velocity * sin(left_angle)) + (current_r_velocity * sin(right_angle))) / 2.0;
+    double average_x_v = (current_l_velocity * cos(left_angle) + current_r_velocity * cos(right_angle)) / 2.0;
+    double average_y_v = (current_l_velocity * sin(left_angle) + current_r_velocity * sin(right_angle)) / 2.0;
     vector3D start_velocity(average_x_v, average_y_v, current_angular);
     double expected_time = 0;
     double mt[5] = {0};
@@ -504,7 +528,7 @@ void move_auton(vector3D delta, vector3D velocity = vector3D(0, 0, 0)){
     while(true){
         current_time = pros::micros() - start_time; 
         current_state = n * current_time / expected_time;
-        MotionStepCommand current_command(stepCommands.Steps[current_state]);
+        MotionStepCommand current_command(stepCommands.Steps[current_state]); //todo: get rid of this and rewrite a position pid
 
         //find the current state of the wheels angle (and hence find the direction of the wheels) and find the wheels current velocity
         left_angle = wrapAngle(getNormalizedSensorAngle(left_rotation_sensor) - 90.0) * TO_RADIANS;
@@ -536,7 +560,7 @@ void move_auton(vector3D delta, vector3D velocity = vector3D(0, 0, 0)){
             reverse_right = true;
         }
 
-        v_right_velocity = SPEED_TO_RPM * TRANSLATE_RATIO * v_right * current_right_vector;
+        v_right_velocity = SPEED_TO_RPM * TRANSLATE_RATIO * v_right * current_right_vector; //translate ratio is the gear ratio, which happens to be 1.0 for Swerve V6.3 on 11/11/24
         v_left_velocity = SPEED_TO_RPM * TRANSLATE_RATIO * v_left * current_left_vector;
 
         if(reverse_left)
@@ -563,7 +587,9 @@ void move_auton(vector3D delta, vector3D velocity = vector3D(0, 0, 0)){
         // calculate the PID output
         l_angle_pid = left_angle_PID.step(l_error);
         r_angle_pid = right_angle_PID.step(r_error);
-
+        //tuned value, reduces power output more when the wheel is facing a more incorrect way 
+        //it will scale to a minimum of 0.7
+        //at zero error its at full power and scales linearly down as error increases, at max error of pi/2 it caps at 0.7
         lscale = scale * ((1.0 - base_v) * fabs(l_error) + base_v);
         rscale = scale * ((1.0 - base_v) * fabs(r_error) + base_v);
 

@@ -136,7 +136,7 @@ const double r_kF = 0.07;   //feedforward compensation for rotation
 const double v_kF = 0.3;    //feedforward compensation for translation
 
 const double scale  = 30.0;
-const double base_v = 0.7;
+const double base_v = 0.7; //this defines the min power of the robot when scaling its power down for each side when the wheels are aiming the wrong way
 
 
 

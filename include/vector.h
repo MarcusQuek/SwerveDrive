@@ -63,7 +63,7 @@ public:
         return vector3D(x * scalar, y * scalar, z * scalar);
     }
 
-    vector3D operator^ (vector3D &obj){
+    vector3D operator^ (vector3D &obj){ //cross product
         return vector3D(y * obj.z - obj.y * z, z * obj.x - obj.z * x, x * obj.y - obj.x * y);
     }
 
