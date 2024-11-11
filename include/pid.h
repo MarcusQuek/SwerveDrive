@@ -5,7 +5,7 @@ class PID
 {
     private:
         double kP;
-        double kI;
+        double kI; 
         double kD;
         uint64_t time_now;
         uint64_t time_prev;
@@ -26,7 +26,7 @@ class PID
             error_int = 0.0; 
         }
 
-        double step(double error){
+        double step(double error){ //calculates the PID output based on the error and the PID constants
             if(time_prev == -1){
                 time_prev = pros::micros();
                 return 0.0;

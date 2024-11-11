@@ -126,6 +126,10 @@ const double angle_kP = 28.0;   //swerve wheel rotation
 const double angle_kI = 0.00;
 const double angle_kD = 5000.0;
 
+const double position_kP = 28.0; //position PID to get the robot to move the correct distance by PIDing the velocities
+const double position_kI = 0.0;
+const double position_kD = 5000.0;
+
 const double MAX_VOLTAGE = 12000;
 
 const double velocity_kP = 0.002;   //swerve wheel power
