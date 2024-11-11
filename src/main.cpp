@@ -436,10 +436,6 @@ void move_auton(vector3D delta, vector3D velocity = vector3D(0, 0, 0)){
     //PID scaling factor to convert power of motor during motion to translation during motion
     double l_position_pid = 0.0;
     double r_position_pid = 0.0;
-    //scaling down the power depending on how wrong the wheel pivot angle is
-    //limited by base_v = 0.7 in definitions.h
-    double lscale = 0;
-    double rscale = 0;
     vector3D start_pos(0, 0, 0);
     //get the current pivot angles of the left and right wheels in radians
     //subtract 90 degrees because the angle zero is defined as the positive x axis in the spline math but we want the zero angle to be defined as the wheels pointing to the front of the robot
@@ -457,9 +453,8 @@ void move_auton(vector3D delta, vector3D velocity = vector3D(0, 0, 0)){
     double current_angular = (current_l_velocity * sin(left_angle) + current_r_velocity * sin(right_angle)) / (2.0 * WHEEL_BASE_RADIUS);
     //x and y components of the translational velocity of the robot
     double average_x_v = (current_l_velocity * cos(left_angle) + current_r_velocity * cos(right_angle)) / 2.0;
-    double average_y_v = (current_l_velocity * sin(left_angle) + current_r_velocity * sin(right_angle)) / 2.0;
-    //current translational AND rotational velocity of the robot
-    vector3D start_velocity(average_x_v, average_y_v, current_angular);
+    double average_y_v = (current_l_velocity * sin(left_angle) + current_r_velocity * sin(right_angle)) / 2.0; 
+    vector3D start_velocity(average_x_v, average_y_v, current_angular); //current translational AND rotational velocity of the robot
     double mt[5] = {0};
     mt[3] = -delta.z;   // Set the m(t) to -m_end*t
 
@@ -483,12 +478,10 @@ void move_auton(vector3D delta, vector3D velocity = vector3D(0, 0, 0)){
         v_right = vector3D(sin(current_command.Rpivot), cos(current_command.Rpivot)) * current_command.Rmove;
         
         //evaluate if we need to reverse one or both wheels
-        if (v_left * current_left_vector < 0){  // check if the angle is obtuse
+        if (v_left * current_left_vector < 0) // check if the angle is obtuse (note that this is a VECTOR multiplication not a SCALAR multiplication. DO NOT attempt to optimise this as v_left || current_left_vector == 0)
             v_left = -v_left; // reverse if angle is obtuse for shorter rotation
-        }
-        if (v_right * current_right_vector < 0){  // check if the angle is obtuse
+        if (v_right * current_right_vector < 0) // check if the angle is obtuse
             v_right = -v_right; // reverse if angle is obtuse for shorter rotation
-        }
 
         //find wheel position and orientation error
         //here is where we would implement closed loop control
@@ -508,12 +501,6 @@ void move_auton(vector3D delta, vector3D velocity = vector3D(0, 0, 0)){
         r_angle_pid = right_angle_PID.step(r_error);
         l_position_pid = left_position_PID.step(l_position_error);
         r_position_pid = right_position_PID.step(r_position_error);
-
-        //tuned value, reduces power output more when the wheel is facing a more incorrect way 
-        //it will scale to a minimum of 0.7
-        //at zero error its at full power and scales linearly down as error increases, at max error of pi/2 it caps at 0.7
-        lscale = scale * ((1.0 - base_v) * fabs(l_error) + base_v);
-        rscale = scale * ((1.0 - base_v) * fabs(r_error) + base_v);
 
         //calculate voltages required to run each motor, and scale them into the acceptable voltage range so they dont exceed max voltage
         //we have to scale the voltages because if we don't, it can happen that one or more motors dont move as fast as we expected because we ordered it to move
