@@ -3,11 +3,6 @@
 void disabled(){}
 void competition_initialize(){}
 
-//Function to determine sign of a integer variable, returns bool
-template <typename T> int sgn(T val){
-    return (T(0) < val) - (val < T(0));
-}
-
 void serialRead(void* params){
     vexGenericSerialEnable(SERIALPORT - 1, 0);
     vexGenericSerialBaudrate(SERIALPORT - 1, 115200);
@@ -79,7 +74,7 @@ double wrapAngle(double angle){ //forces the angle to be within the -180 < angle
 }
 
 vector3D normalizeJoystick(int x_in, int y_in){ //convert translation joystick input to polar vector
-    double angle = atan2(y_in, x_in) * TO_DEGREES; //angle of translation polar vector
+    double angle = atan2(y_in, x_in) * TO_DEGREES; //angle of translation polar vector. Note that atan2 automatically considers the sign to deal with the trigonometry quadrant
     double scaleLength;
     double magnitude; //magnitude of translation polar vector
     double length = sqrt(x_in * x_in + y_in * y_in);
@@ -120,7 +115,7 @@ vector3D normalizeRotation(int x_in){ //get rotation speed from rotation joystic
 double angle(vector3D v1, vector3D v2){
     double dot = v1 * v2;
     double det = v1.x * v2.y - v1.y * v2.x;
-    return -atan2(det, dot);
+    return -atan2(det, dot); //atan2 automatically considers the sign to deal with the trigonometry quadrant
 }
 
 double max(double a, double b) { //returns the larger of two doubles
@@ -187,11 +182,16 @@ void moveBase(){
 
     vector3D L2I_pos(WHEEL_BASE_RADIUS, 0.0, 0.0);
     while(true){
-        left_angle = wrapAngle(getNormalizedSensorAngle(left_rotation_sensor) - 90.0) * TO_RADIANS;
-        right_angle = wrapAngle(getNormalizedSensorAngle(right_rotation_sensor) - 90.0) * TO_RADIANS;
+        //get the current pivot angles of the left and right wheels in radians
+        //subtract 90 degrees because the angle zero is defined as the positive x axis in the spline math but we want the zero angle to be defined as the wheels pointing to the front of the robot
+        left_angle = getNormalizedSensorAngle(left_rotation_sensor) - 90.0 * TO_RADIANS; //note that the function getNormalizedSensorAngle already implements wrapAngle to bound the angle between -180 and 180 degrees
+        right_angle = getNormalizedSensorAngle(right_rotation_sensor) - 90.0 * TO_RADIANS;
         current_left_vector = vector3D(cos(left_angle), sin(left_angle), 0.0);
         current_right_vector = vector3D(cos(right_angle), sin(right_angle), 0.0);
 
+        //we have to divide by four because the velocity of the wheel is the average of the speeds of the four motors for that wheel
+        //we cannot just take one motor for each gear of each wheel, since each gear is powered by two motors which could be running at marginally different speeds
+        //by taking readings from all four motors of each wheel, we get more accurate results
         current_l_velocity = ((luA.get_actual_velocity() + luB.get_actual_velocity() + llA.get_actual_velocity() + llB.get_actual_velocity()) / 4.0);
         current_r_velocity = ((ruA.get_actual_velocity() + ruB.get_actual_velocity() + rlA.get_actual_velocity() + rlB.get_actual_velocity()) / 4.0);
 
@@ -254,7 +254,7 @@ void moveBase(){
             reverse_right = true;
         }
 
-        v_right_velocity = SPEED_TO_RPM * TRANSLATE_RATIO * v_right * current_right_vector;
+        v_right_velocity = SPEED_TO_RPM * TRANSLATE_RATIO * v_right * current_right_vector; //the SPEED_TO_RPM scaling factor converts from speed to rpm
         v_left_velocity = SPEED_TO_RPM * TRANSLATE_RATIO * v_left * current_left_vector;
 
         if(reverse_left)
@@ -289,7 +289,7 @@ void moveBase(){
         //at a higher voltage than it can physically achieve, and this will throw off the proportions of velocity of the four motor pairs, and cause the robot
         //to move in unexpected ways. Scaling means that sometimes the robot moves slower than expected, but at least it moves correctly otherwise.
         lu = (int32_t)(lscale * (l_velocity_pid + l_angle_pid));//this side seems less powerful on the robot
-        ll = (int32_t)(lscale * (l_velocity_pid - l_angle_pid));
+        ll = (int32_t)(lscale * (l_velocity_pid - l_angle_pid));    
         ru = (int32_t)(rscale * (r_velocity_pid + r_angle_pid));
         rl = (int32_t)(rscale * (r_velocity_pid - r_angle_pid));
         //if any of lu, ll, ru or rl are too big, we need to scale them, and we must scale them all by the same amount so we dont throw off the proportions
@@ -369,17 +369,16 @@ StepCommandList GenerateHermitePath(vector3D pStart, vector3D pEnd, vector3D vSt
     StepCL.cdx = pStart.x;
     StepCL.cdy = pStart.y;
 
-
-    vector3D ct[4] = { //ct represents the coefficients of the polynomial function C(t) which defines the curve of the path
+    vector3D ct[4] = { //this array of vector3D represents the coefficients of the parametric polynomial function C(t) which defines the curve of the path
         vector3D(StepCL.cax, StepCL.cay),
         vector3D(StepCL.cbx, StepCL.cby),
         vector3D(StepCL.ccx, StepCL.ccy),
         vector3D(StepCL.cdx, StepCL.cdy)
     };
 
-   vector3D CurrentRobotPosition = pStart;
-    double CurrentRobotOrientation = vector3D(vStart).getAngle();
-    double mEnd = vEnd.getAngle();
+    vector3D CurrentRobotPosition = pStart; //current robot position is simply the position of the robot at the start of the motion
+    double CurrentRobotOrientation = vector3D(vStart).getAngle(); //angle of the robot at the start of the motion is simply the angle of the robot velocity at the start of the motion
+    double mEnd = vEnd.getAngle(); //angle of the robot at the end of the motion is simply the angle of the robot velocity at the end of the motion
 
     vector3D previous_left_displacement(std::sin(CurrentRobotOrientation) * WHEEL_BASE_RADIUS, std::cos(CurrentRobotOrientation) * WHEEL_BASE_RADIUS);
     vector3D previous_right_displacement(-std::sin(CurrentRobotOrientation) * WHEEL_BASE_RADIUS, -std::cos(CurrentRobotOrientation) * WHEEL_BASE_RADIUS);
@@ -388,8 +387,8 @@ StepCommandList GenerateHermitePath(vector3D pStart, vector3D pEnd, vector3D vSt
     for (float t = StepLength; t < 1; t += StepLength) {
         //apply C(t) equation to get CurrentRobotPosition
         CurrentRobotPosition = vector3D(
-            ct[0].x * std::pow(t, 3) + ct[1].x * std::pow(t, 2) + ct[2].x * t + ct[3].x,
-            ct[0].y * std::pow(t, 3) + ct[1].y * std::pow(t, 2) + ct[2].y * t + ct[3].y
+            ct[0].x * std::pow(t, 3) + ct[1].x * std::pow(t, 2) + ct[2].x * t + ct[3].x, //x polynomial of the parametric equation C(t)
+            ct[0].y * std::pow(t, 3) + ct[1].y * std::pow(t, 2) + ct[2].y * t + ct[3].y //y polynomial of the parametric equation C(t)
         );
         //apply m(t) equation to get CurrentRobotOrientation
         CurrentRobotOrientation = mEnd + mt[0] * std::pow(t, 4) + mt[1] * std::pow(t, 3) + mt[2] * std::pow(t, 2) + mt[3] * t + mt[4]; //orientation changes according to m(t) function
@@ -399,17 +398,14 @@ StepCommandList GenerateHermitePath(vector3D pStart, vector3D pEnd, vector3D vSt
 }
 
 void move_auton(vector3D delta, vector3D velocity = vector3D(0, 0, 0)){
-    int32_t lu;
-    int32_t ll;
-    int32_t ru;
-    int32_t rl;
+    int32_t lu, ll, ru, rl; //these are the four variables that store the voltages to run the four motor pairs for the base at
 
-    PID left_angle_PID(angle_kP, angle_kI, angle_kD);
+    PID left_angle_PID(angle_kP, angle_kI, angle_kD); //construct four PID objects to tune the left and right pivoting velocity and the left and right rotation velocity
     PID right_angle_PID(angle_kP, angle_kI, angle_kD);
     PID left_velocity_PID(velocity_kP, velocity_kI, velocity_kD);
     PID right_velocity_PID(velocity_kP, velocity_kI, velocity_kD);
 
-    double v_right_velocity;
+    double v_right_velocity; 
     double v_left_velocity;
     double left_angle;
     double right_angle;
@@ -437,11 +433,17 @@ void move_auton(vector3D delta, vector3D velocity = vector3D(0, 0, 0)){
     double lscale = 0;
     double rscale = 0;
     vector3D start_pos(0, 0, 0);
-    left_angle = wrapAngle(getNormalizedSensorAngle(left_rotation_sensor) - 90.0) * TO_RADIANS;
-    right_angle = wrapAngle(getNormalizedSensorAngle(right_rotation_sensor) - 90.0) * TO_RADIANS;
+    //get the current pivot angles of the left and right wheels in radians
+    //subtract 90 degrees because the angle zero is defined as the positive x axis in the spline math but we want the zero angle to be defined as the wheels pointing to the front of the robot
+    left_angle = getNormalizedSensorAngle(left_rotation_sensor) - 90.0 * TO_RADIANS; //note that the function getNormalizedSensorAngle already implements wrapAngle to bound the angle between -180 and 180 degrees
+    right_angle = getNormalizedSensorAngle(right_rotation_sensor) - 90.0 * TO_RADIANS;
+
+    //we have to divide by four because the velocity of the wheel is the average of the speeds of the four motors for that wheel
+    //we cannot just take one motor for each gear of each wheel, since each gear is powered by two motors which could be running at marginally different speeds
+    //by taking readings from all four motors of each wheel, we get more accurate results
     current_l_velocity = ((luA.get_actual_velocity() + luB.get_actual_velocity() + llA.get_actual_velocity() + llB.get_actual_velocity()) / 4.0);
     current_r_velocity = ((ruA.get_actual_velocity() + ruB.get_actual_velocity() + rlA.get_actual_velocity() + rlB.get_actual_velocity()) / 4.0);
-    double current_angular = (current_l_velocity * sin(left_angle)+current_r_velocity * sin(right_angle)) / (2.0 * WHEEL_BASE_RADIUS);
+    double current_angular = (current_l_velocity * sin(left_angle) + current_r_velocity * sin(right_angle)) / (2.0 * WHEEL_BASE_RADIUS);
     double average_x_v = ((current_l_velocity * cos(left_angle)) + (current_r_velocity * cos(right_angle))) / 2.0;
     double average_y_v = ((current_l_velocity * sin(left_angle)) + (current_r_velocity * sin(right_angle))) / 2.0;
     vector3D start_velocity(average_x_v, average_y_v, current_angular);
@@ -453,30 +455,47 @@ void move_auton(vector3D delta, vector3D velocity = vector3D(0, 0, 0)){
     //the greater the number of subdivisions, the more expensive the length calculation is but the more accurate the approximation
     double length = 0;  //measured in millimeters
     double t, T;
-    const int n = 10000; //number of subdivisions of the function
+    const int n = 10000; //number of subdivisions of the function (this is a constant to be tuned by the programmer)
     StepCommandList stepCommands = GenerateHermitePath(start_pos, delta, start_velocity, velocity, (1.0 / n), mt); //generate the list of step commands for the robot to follow to produce the path
     for (int i = 1; i < n; i++) {
         t = static_cast<double>(i) / n;
         T = static_cast<double>(i - 1) / n;
+        //get the current point on the path
         vector3D v1(stepCommands.cax * std::pow(t, 3) + stepCommands.cbx * std::pow(t, 2) + stepCommands.ccx * t + stepCommands.cdx, stepCommands.cay * std::pow(t, 3) + stepCommands.cby * std::pow(t, 2) + stepCommands.ccy * t + stepCommands.cdy);
+        //get the next point on the path
         vector3D v2((stepCommands.cax * std::pow(T, 3) + stepCommands.cbx * std::pow(T, 2) + stepCommands.ccx * T + stepCommands.cdx), stepCommands.cay * std::pow(T, 3) + stepCommands.cby * std::pow(T, 2) + stepCommands.ccy * T + stepCommands.cdy);
-        length += (v1 - v2).magnitude();
+        length += (v1 - v2).magnitude(); //measure the distance between the current and next point on the path and add that distance to length
     }
 
-    //calculate the max distance over the robot must travel while accelerating to max speed
+    //calculate the max distance over the robot must travel to accelerate to max speed then decelerate to a stop again
     //derivation: v^2 = u^2 + 2as (This is one of the kinematics equations that all physical objects follow. v is final velocity, u is initial velocity, a is accel and s is the distance of the motion)
     //thus, (v^2)/a = u^2 + 2s
     //thus, assuming initial velocity is zero (assuming the worst case scenario), (v^2)/a = 2s
-    double BASE_ACCEL_LENGTH = (MAX_SPEED * MAX_SPEED)/ACCEL; 
-    if(length < BASE_ACCEL_LENGTH)
+    //since s = distance travelled during accel = distance travelled during decel, 2s = distance travelled during accel + distance travelled during decel
+    double BASE_ACCEL_THEN_DECEL_LENGTH = (MAX_SPEED * MAX_SPEED)/ACCEL; 
+    //if the length of the path is less than the minimum path length needed for the robot to reach max speed during the motion, then we do not know the value of v (because v wont reach MAX_SPEED)
+    //hence we must use the kinematic equation s = ut + 0.5at^2, which does not need v as a parameter
+    if(length < BASE_ACCEL_THEN_DECEL_LENGTH) //length is the length of the path, BASE_ACCEL_THEN_DECEL_LENGTH is the minimum path length needed for the robot to reach max speed during the motion
+        //derivation: s = ut + 0.5at^2 (This is one of the kinematics equations that all physical objects follow. t is time, u is initial velocity, a is accel and s is the distance of the motion)
+        //Assume u = 0
+        //thus, s = 0.5at^2
+        //thus, 2s = at^2
+        //thus, 2s/a = t^2
+        //thus, sqrt(2s/a) = t (ignore the negative case since time should always be positive)
         expected_time = sqrt(2.0 * length / ACCEL);
-    else{
-        double ACCEL_TIME = 2.0 * MAX_SPEED/ACCEL;
-        expected_time = ((length - BASE_ACCEL_LENGTH) / MAX_SPEED) + ACCEL_TIME;
+    else{ //length of the path is long enough for the robot to reach MAX_SPEED during the motion
+        //derivation: v =  u + at (This is one of the kinematics equations that all physical objects follow. t is time, v is final velocity, u is initial velocity and a is accel)
+        //Assume u = 0
+        //Since we reach MAX_SPEED, v = MAX_SPEED
+        //thus, MAX_SPEED = at
+        //thus, MAX_SPEED/a = t
+        //t is time to accel from zero velocity to max speed, so time to accel then decel is 2t
+        double ACCEL_THEN_DECEL_TIME = 2.0 * MAX_SPEED / ACCEL;
+
+        expected_time = ((length - BASE_ACCEL_THEN_DECEL_LENGTH) / MAX_SPEED) + ACCEL_THEN_DECEL_TIME;
     }
     expected_time *= 1000000;// convert from seconds to microseconds
 
-    //implement async delay
     uint64_t start_time = pros::micros(); //get the current time (pros::micros returns a value equal to the number of microseconds that have passed since the code started running)
     uint64_t current_time = 0;
     uint64_t current_state = 0;
@@ -492,6 +511,10 @@ void move_auton(vector3D delta, vector3D velocity = vector3D(0, 0, 0)){
         right_angle = wrapAngle(getNormalizedSensorAngle(right_rotation_sensor) - 90.0) * TO_RADIANS;
         current_left_vector = vector3D(cos(left_angle), sin(left_angle), 0.0);
         current_right_vector = vector3D(cos(right_angle), sin(right_angle), 0.0);
+        //we have to divide by four because the velocity of the wheel is the average of the speeds of the four motors for that wheel
+        //for any set of motor pair velocities where one pair is running at u - v and the other pair is running at u + v, the wheel velocity is v and the pivoting velocity is u/3
+        //the average of u - v and u + v is (u - v) + (u + v) = 2u 
+        //by taking readings from all four motors of each wheel, we get more accurate results, since each gear is powered by two motors which could be running at marginally different speeds
         current_l_velocity = ((luA.get_actual_velocity() + luB.get_actual_velocity() + llA.get_actual_velocity() + llB.get_actual_velocity()) / 4.0);
         current_r_velocity = ((ruA.get_actual_velocity() + ruB.get_actual_velocity() + rlA.get_actual_velocity() + rlB.get_actual_velocity()) / 4.0);
         
@@ -544,11 +567,31 @@ void move_auton(vector3D delta, vector3D velocity = vector3D(0, 0, 0)){
         lscale = scale * ((1.0 - base_v) * fabs(l_error) + base_v);
         rscale = scale * ((1.0 - base_v) * fabs(r_error) + base_v);
 
-        lu = (int32_t)std::clamp(lscale * (l_velocity_pid + l_angle_pid), -MAX_VOLTAGE, MAX_VOLTAGE); //this side seems less powerful on the robot
-        ll = (int32_t)std::clamp(lscale * (l_velocity_pid - l_angle_pid), -MAX_VOLTAGE, MAX_VOLTAGE);
-        ru = (int32_t)std::clamp(rscale * (r_velocity_pid + r_angle_pid), -MAX_VOLTAGE, MAX_VOLTAGE);
-        rl = (int32_t)std::clamp(rscale * (r_velocity_pid - r_angle_pid), -MAX_VOLTAGE, MAX_VOLTAGE);
-    
+        //calculate voltages required to run each motor, and scale them into the acceptable voltage range so they dont exceed max voltage
+        //we have to scale the voltages because if we don't, it can happen that one or more motors dont move as fast as we expected because we ordered it to move
+        //at a higher voltage than it can physically achieve, and this will throw off the proportions of velocity of the four motor pairs, and cause the robot
+        //to move in unexpected ways. Scaling means that sometimes the robot moves slower than expected, but at least it moves correctly otherwise.
+        lu = (int32_t)(lscale * (l_velocity_pid + l_angle_pid));//this side seems less powerful on the robot
+        ll = (int32_t)(lscale * (l_velocity_pid - l_angle_pid));
+        ru = (int32_t)(rscale * (r_velocity_pid + r_angle_pid));
+        rl = (int32_t)(rscale * (r_velocity_pid - r_angle_pid));
+        //if any of lu, ll, ru or rl are too big, we need to scale them, and we must scale them all by the same amount so we dont throw off the proportions
+        if(fabs(lu) > MAX_VOLTAGE || fabs(ll) > MAX_VOLTAGE || fabs(ru) > MAX_VOLTAGE || fabs(rl) > MAX_VOLTAGE)
+        {
+            //figure out which of lu, ll, ru or rl has the largest magnitude
+            double max = fabs(lu);
+            if(max < fabs(ll))
+                max = fabs(ll);
+            if(max < fabs(ru))
+                max = fabs(ru);
+            if(max < fabs(rl))
+                max = fabs(rl);
+            double VoltageScalingFactor = max / MAX_VOLTAGE; //this will definitely be positive, hence it wont change the sign of lu, ll, ru or rl.
+            lu = lu / VoltageScalingFactor;
+            ll = ll / VoltageScalingFactor;
+            ru = ru / VoltageScalingFactor;
+            rl = rl / VoltageScalingFactor;
+        }
 
         luA.move_voltage(lu);
         luB.move_voltage(lu);
