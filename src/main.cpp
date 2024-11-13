@@ -143,7 +143,7 @@ void moveBase(){
     //actual velocity as measured
     double current_l_velocity = 0.0;
     double current_r_velocity = 0.0;
-    //error in magnitudes from expected to actual v_right_velocity and left v
+    //error in magnitudes from expected to actual v_right_velocity and v_left_velocity
     double current_l_tl_error = 0.0;
     double current_r_tl_error = 0.0;
     //power output for angle component of pid
@@ -156,14 +156,10 @@ void moveBase(){
     //limited by base_v = 0.7 in definitions.h
     double lscale = 0;
     double rscale = 0;
-    //current angular v of the robot
-    double current_angular = 0.0;
-    //current translational velocity vector of the robot
-    vector3D current_tl_velocity(0, 0, 0);
-    //previous target translation vector
-    vector3D prev_target_v(0, 0, 0);
-    //previous target rotation vector
-    vector3D prev_target_r(0, 0, 0);
+    double current_angular = 0.0; //current angular v of the robot
+    vector3D current_tl_velocity(0, 0, 0); //current translational velocity vector of the robot
+    vector3D prev_target_v(0, 0, 0); //previous target translation vector
+    vector3D prev_target_r(0, 0, 0); //previous target rotation vector
     //feed forward for pid
     //differentiate the control input (the joystick) to get rate of change of joystick
     //if rate of change is huge, it causes the pid controller to return an abnormally large overcompensation
@@ -179,7 +175,7 @@ void moveBase(){
     uint64_t micros_prev = pros::micros(); //pros::micros returns the number of microseconds that have passed since the program started
     uint64_t dt = -1; //f term for feed forward differentiation for rate of change 
 
-    int32_t lu;
+    int32_t lu; //voltage variables for the four motor pairs of the base
     int32_t ll;
     int32_t ru;
     int32_t rl;
@@ -263,18 +259,19 @@ void moveBase(){
         bool reverse_left = false;
         
         //evaluate if we need to reverse one or both wheels
-        if (v_left * current_left_vector < 0){  // check if the angle is obtuse
-            v_left = -v_left; // reverse if angle is obtuse for shorter rotation
+        if (v_left * current_left_vector < 0){  // check if the angle is obtuse (note that this is a VECTOR multiplication not a SCALAR multiplication. DO NOT attempt to optimise this as v_left || current_left_vector == 0)
+            v_left = -v_left; // flip the v_left vector if angle is obtuse for shorter rotation
             reverse_left = true;
         }
         if (v_right * current_right_vector < 0){  // check if the angle is obtuse
-            v_right = -v_right; // reverse if angle is obtuse for shorter rotation
+            v_right = -v_right; // flip the v_right vector if angle is obtuse for shorter rotation
             reverse_right = true;
         }
         //find current numerical rpm for each wheel
         v_right_velocity = SPEED_TO_RPM * TRANSLATE_RATIO * v_right * current_right_vector; //the SPEED_TO_RPM scaling factor converts from speed to rpm
         v_left_velocity = SPEED_TO_RPM * TRANSLATE_RATIO * v_left * current_left_vector;
 
+        //the magnitude of these vectors get flipped again if v_left or v_right was flipped, so the end state velocity vector is still the same as the original, just with a shorter steering rotation
         if(reverse_left)
             v_left_velocity = -v_left_velocity;
         if(reverse_right)
@@ -299,7 +296,7 @@ void moveBase(){
         l_angle_pid = left_angle_PID.step(l_error);
         r_angle_pid = right_angle_PID.step(r_error);
         //tuned value, reduces power output more when the wheel is facing a more incorrect way 
-        //it will scale to a minimum of 0.7
+        //it will scale to a minimum of 0.7 as defined by the constant base_v in definitions.h
         //at zero error its at full power and scales linearly down as error increases, at max error of pi/2 it caps at 0.7
         lscale = scale * ((1.0 - base_v) * fabs(l_error) + base_v);
         rscale = scale * ((1.0 - base_v) * fabs(r_error) + base_v);
@@ -348,7 +345,7 @@ void moveBase(){
 
 struct MotionStepCommand { //contains the amount that the left and right wheels should rotate and pivot for each step of the motion
     double Lmove, Lpivot, Rmove, Rpivot;
-    MotionStepCommand(double Lmove, double Lpivot, double Rmove, double Rpivot, vector3D position, double orientation)
+    MotionStepCommand(double Lmove, double Lpivot, double Rmove, double Rpivot)
         : Lmove(Lmove), Lpivot(Lpivot), Rmove(Rmove), Rpivot(Rpivot) {}
 };
 struct StepCommandList{ //contains the list of commands for the base to follow in order to produce the path, AND contains the eight hermite coefficients for the left and right wheels
@@ -415,7 +412,12 @@ StepCommandList GenerateHermitePath(vector3D pStart, vector3D pEnd, vector3D vSt
 }
 
 void move_auton(vector3D delta, vector3D velocity = vector3D(0, 0, 0)){
-    int32_t lu, ll, ru, rl; //these are the four variables that store the voltages to run the four motor pairs for the base at
+
+    //give it a big list of paths
+    //each path is gonna have its own step command list
+    //we have to execute them all
+
+    int32_t lu, ll, ru, rl; //these are the four variables that store the voltages of the four motor pairs for the base
 
     PID left_angle_PID(angle_kP, angle_kI, angle_kD); //construct four PID objects to tune the left and right pivoting velocity and the left and right wheel translation
     PID right_angle_PID(angle_kP, angle_kI, angle_kD);
@@ -464,7 +466,7 @@ void move_auton(vector3D delta, vector3D velocity = vector3D(0, 0, 0)){
     
     while(StepCommandCounter < stepCommands.Steps.size() - 1){ //run until the path is fully executed
         StepCommandCounter++;
-        MotionStepCommand current_command(stepCommands.Steps[StepCommandCounter]); //todo: get rid of this and rewrite a position pid
+        MotionStepCommand current_command(stepCommands.Steps[StepCommandCounter]);
 
         //find the current state of the wheels angle (and hence find the direction of the wheels) and find the wheels current velocity
         left_angle = wrapAngle(getNormalizedSensorAngle(left_rotation_sensor) - 90.0) * TO_RADIANS;
@@ -479,9 +481,9 @@ void move_auton(vector3D delta, vector3D velocity = vector3D(0, 0, 0)){
         
         //evaluate if we need to reverse one or both wheels
         if (v_left * current_left_vector < 0) // check if the angle is obtuse (note that this is a VECTOR multiplication not a SCALAR multiplication. DO NOT attempt to optimise this as v_left || current_left_vector == 0)
-            v_left = -v_left; // reverse if angle is obtuse for shorter rotation
+            v_left = -v_left; // flip the v_left vector if angle is obtuse for shorter rotation
         if (v_right * current_right_vector < 0) // check if the angle is obtuse
-            v_right = -v_right; // reverse if angle is obtuse for shorter rotation
+            v_right = -v_right; // flip the v_right vector if angle is obtuse for shorter rotation
 
         //find wheel position and orientation error
         //here is where we would implement closed loop control
