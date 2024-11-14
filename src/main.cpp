@@ -1,4 +1,6 @@
 #include "main.h"
+#include "definitions.h"
+#include "pid.h"
 
 void disabled(){}
 void competition_initialize(){}
@@ -58,11 +60,6 @@ void brake(){ //brakes all base motors
     pros::delay(1);
 }
 
-double getNormalizedSensorAngle(pros::Rotation &sensor){ //Converts rotational sensor readings into degrees and bounds it between -180 to 180
-    double angle = sensor.get_angle() / 100.0; //Convert from centidegrees to degrees
-    return wrapAngle(angle); //forces the angle to be within the -180 < angle < 180 range
-}
-
 double wrapAngle(double angle){ //forces the angle to be within the -180 < angle < 180 range
     if (angle > 180.0)
         while (angle > 180.0)
@@ -71,6 +68,11 @@ double wrapAngle(double angle){ //forces the angle to be within the -180 < angle
         while (angle< -180.0)
             angle += 360.0;  
     return angle;
+}
+
+double getNormalizedSensorAngle(pros::Rotation &sensor){ //Converts rotational sensor readings into degrees and bounds it between -180 to 180
+    double angle = sensor.get_angle() / 100.0; //Convert from centidegrees to degrees
+    return wrapAngle(angle); //forces the angle to be within the -180 < angle < 180 range
 }
 
 vector3D normalizeJoystick(int x_in, int y_in){ //convert translation joystick input to polar vector
@@ -357,7 +359,7 @@ void GetNextStep(std::vector<MotionStepCommand>& Steps, vector3D NewRobotPositio
     //apply definition of L(t) and R(t) to get current left and right wheel position
     //left and right displacements are the relative positions of the left and right wheels relative to the robot
     vector3D left_displacement(std::sin(NewRobotOrientation) * WHEEL_BASE_RADIUS, std::cos(NewRobotOrientation) * WHEEL_BASE_RADIUS);
-    vector3D right_displacement(std::sin(NewRobotOrientation) * WHEEL_BASE_RADIUS, std::cos(NewtRobotOrientation) * WHEEL_BASE_RADIUS);
+    vector3D right_displacement(std::sin(NewRobotOrientation) * WHEEL_BASE_RADIUS, std::cos(NewRobotOrientation) * WHEEL_BASE_RADIUS);
     vector3D NewLeftWheelPosition = NewRobotPosition + left_displacement;
     vector3D NewRightWheelPosition = NewRobotPosition + right_displacement;
     //compare new left and right wheel positions to the previous left and right wheel positions to see how each wheel should move during the next step, to get from the previous to the new state
@@ -460,7 +462,7 @@ void move_auton(vector3D delta, vector3D velocity = vector3D(0, 0, 0)){
     double mt[5] = {0};
     mt[3] = -delta.z;   // Set the m(t) to -m_end*t
 
-    StepCommandList stepCommands = GenerateHermitePath(start_pos, delta, start_velocity, velocity, (1.0 / n), mt); //generate the list of step commands for the robot to follow to produce the path
+    StepCommandList stepCommands = GenerateHermitePath(start_pos, delta, start_velocity, velocity, 100, mt); //generate the list of step commands for the robot to follow to produce the path
 
     int StepCommandCounter = -1; //this will keep track of which step commands have been executed and which have not
     
@@ -508,10 +510,10 @@ void move_auton(vector3D delta, vector3D velocity = vector3D(0, 0, 0)){
         //we have to scale the voltages because if we don't, it can happen that one or more motors dont move as fast as we expected because we ordered it to move
         //at a higher voltage than it can physically achieve, and this will throw off the proportions of velocity of the four motor pairs, and cause the robot
         //to move in unexpected ways. Scaling means that sometimes the robot moves slower than expected, but at least it moves correctly otherwise.
-        lu = (int32_t)(lscale * (l_position_pid + l_angle_pid));//this side seems less powerful on the robot
-        ll = (int32_t)(lscale * (l_position_pid - l_angle_pid));
-        ru = (int32_t)(rscale * (r_position_pid + r_angle_pid));
-        rl = (int32_t)(rscale * (r_position_pid - r_angle_pid));
+        lu = (int32_t)(l_position_pid + l_angle_pid);//this side seems less powerful on the robot
+        ll = (int32_t)(l_position_pid - l_angle_pid);
+        ru = (int32_t)(r_position_pid + r_angle_pid);
+        rl = (int32_t)(r_position_pid - r_angle_pid);
         //if any of lu, ll, ru or rl are too big, we need to scale them, and we must scale them all by the same amount so we dont throw off the proportions
         if(fabs(lu) > MAX_VOLTAGE || fabs(ll) > MAX_VOLTAGE || fabs(ru) > MAX_VOLTAGE || fabs(rl) > MAX_VOLTAGE)
         {

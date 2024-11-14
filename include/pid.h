@@ -55,6 +55,6 @@ class PID
             double dterm = (kD * error_now - kD * error_prev) / dt;
 
             // calculate the PID output
-            return pid = 10.0 * (kP * error_now + kI * error_int + dterm);
+            return 10.0 * (kP * error_now + kI * error_int + dterm);
         }
 };
