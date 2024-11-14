@@ -1,6 +1,4 @@
 #include "main.h"
-#include "definitions.h"
-#include "pid.h"
 
 void disabled(){}
 void competition_initialize(){}
@@ -270,8 +268,9 @@ void moveBase(){
             reverse_right = true;
         }
         //find current numerical rpm for each wheel
-        v_right_velocity = SPEED_TO_RPM * TRANSLATE_RATIO * v_right * current_right_vector; //the SPEED_TO_RPM scaling factor converts from speed to rpm
-        v_left_velocity = SPEED_TO_RPM * TRANSLATE_RATIO * v_left * current_left_vector;
+        //these brackets are needed or you get an error. nobody knows why.
+        v_right_velocity = (SPEED_TO_RPM * TRANSLATE_RATIO) * (v_right * current_right_vector); //the SPEED_TO_RPM scaling factor converts from speed to rpm
+        v_left_velocity = (SPEED_TO_RPM * TRANSLATE_RATIO) * (v_left * current_left_vector);
 
         //the magnitude of these vectors get flipped again if v_left or v_right was flipped, so the end state velocity vector is still the same as the original, just with a shorter steering rotation
         if(reverse_left)
