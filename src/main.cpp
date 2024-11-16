@@ -566,6 +566,45 @@ std::vector<Waypoint> ImportWaypointConfig(String config)
     return waypoints;
 }
 
+// A struct to represent a single point in the lookup table
+struct Point {
+    double x; //u value
+    double y; //angle value
+};
+
+// Function to perform linear interpolation in the orientation lookup tables
+double linearInterpolate(const std::vector<Point>& points, double x) {
+    // Ensure the lookup table is sorted by x
+    auto compare = [](const Point& a, const Point& b) { return a.x < b.x; };
+    auto it = std::lower_bound(points.begin(), points.end(), Point{x, 0.0}, compare);
+
+    // Handle cases where x is out of range
+    if (it == points.begin()) {
+        return points.front().y; // Return the first y-value if x is too small
+    }
+    if (it == points.end()) {
+        return points.back().y; // Return the last y-value if x is too large
+    }
+
+    // Find the two points for interpolation
+    auto p2 = *it;
+    auto p1 = *(it - 1);
+
+    // Perform linear interpolation
+    double slope = (p2.y - p1.y) / (p2.x - p1.x);
+    return p1.y + slope * (x - p1.x);
+}
+
+std::vector<Point> generateLocalLookupTable(double startValue, double endValue, std::vector<Point> GlobalLookupTable, double resolution) //generates a subtable of a larger lookup table
+{
+    std::vector<Point> LocalLookupTable = {
+        {linearInterpolate(GlobalLookupTable, startValue), 0} //input the start point of the lookup table
+    }
+    for(int i = 0; i < 1 - (1 / resolution); i = i + 1 / resolution) //input all the points in the middle of the lookup table
+        LocalLookupTable.emplace_back(linearInterpolate(GlobalLookupTable, i + startValue), i);
+    LocalLookupTable.emplace_back(linearInterpolate(GlobalLookupTable, endValue), 1); //input the end point of the lookup table
+}
+
 void GetNextStep(std::vector<MotionStepCommand>& Steps, vector3D NewRobotPosition, double NewRobotOrientation, vector3D PreviousLeftWheelPosition, vector3D PreviousRightWheelPosition) {
     //apply definition of L(t) and R(t) to get current left and right wheel position
     //left and right displacements are the relative positions of the left and right wheels relative to the robot
@@ -579,10 +618,7 @@ void GetNextStep(std::vector<MotionStepCommand>& Steps, vector3D NewRobotPositio
     Steps.push_back(MotionStepCommand(LeftStep.magnitude(), LeftStep.getAngle(), RightStep.magnitude(), RightStep.getAngle())); //encode the step information into the Steps list
 }
 
-StepCommandList GenerateHermitePath(vector3D pStart, vector3D pEnd, vector3D vStart, vector3D vEnd, float StepLength, const double mt[5]) {
-    if (sizeof(mt) / sizeof(mt[0]) != 5) //mt represents the coefficients of the polynomial function m(t) which we limit to degree 4, so array size should be exactly 5
-        return {};
- 
+StepCommandList GenerateHermitePath(vector3D pStart, vector3D pEnd, vector3D vStart, vector3D vEnd, float StepLength, std::vector<Point> LocalOrientationLookupTable) {
     StepCommandList StepCL; //this list will store all the step motion data that causes the robot to execute the path
 
     //THIS PRODUCES THE HERMITE SPLINE COEFFICIENTS. THESE ARE NOT CONSTANTS FOR YOU TO TUNE. DO NOT CHANGE THESE CONSTANTS.
@@ -617,8 +653,8 @@ StepCommandList GenerateHermitePath(vector3D pStart, vector3D pEnd, vector3D vSt
             ct[0].x * std::pow(t, 3) + ct[1].x * std::pow(t, 2) + ct[2].x * t + ct[3].x, //x polynomial of the parametric equation C(t)
             ct[0].y * std::pow(t, 3) + ct[1].y * std::pow(t, 2) + ct[2].y * t + ct[3].y //y polynomial of the parametric equation C(t)
         );
-        //apply m(t) equation to get CurrentRobotOrientation
-        CurrentRobotOrientation = mEnd + mt[0] * std::pow(t, 4) + mt[1] * std::pow(t, 3) + mt[2] * std::pow(t, 2) + mt[3] * t + mt[4]; //orientation changes according to m(t) function
+        //apply LocalOrientationLookupTable to get CurrentRobotOrientation
+        CurrentRobotOrientation = linearInterpolate(LocalOrientationLookupTable, t) //orientation changes according to lookup table
         GetNextStep(StepCL.Steps, CurrentRobotPosition, CurrentRobotOrientation, PreviousLeftWheelPosition, PreviousRightWheelPosition);
     }
     return StepCL;
@@ -627,40 +663,51 @@ StepCommandList GenerateHermitePath(vector3D pStart, vector3D pEnd, vector3D vSt
 void move_auton(){ //execute full auton path
     //convert the config string into a big list of waypoints
     std::vector<Waypoint> waypoints = ImportWaypointConfig("");
-    std::vector<std::array<double, 5>> mtPolynomials = {
-        {1.0, 2.0, 3.0, 4.0, 5.0}, //mt polynomial coefficients for the orientation of the robot when going from the first to the second waypoint
-        {4.0, 5.0, 6.0, 7.0, 8.0}, //mt polynomial coefficients for the orientation of the robot when going from the second to the third waypoint
-        {7.0, 8.0, 9.0, 10.0, 11.0}
+
+    const std::vector<Point> GlobalOrientationLookupTable = { //plots orientation angle (represented as y value in the table) against u value in parameter space of spline paths (represented as x value in the table)
+        {0, 0},
+        {1, M_PI},
+        {1, -M_PI}
     };
 
+    // Sort GlobalOrientationLookupTable by x (in case it's not already sorted)
+    std::sort(GlobalOrientationLookupTable.begin(), GlobalOrientationLookupTable.end(), [](const Point& a, const Point& b) {
+        return a.x < b.x;
+    });
+
     int waypointIndex = 0;
+
+    //generate the lookup table of orientations local to this path, based on the global lookup table
+    std::vector<Point> LocalOrientationLookupTable; //plots orientation angle against t value in parameter space of THIS PATH NOT ALL OF THEM
+
     while(waypointIndex < waypoints.size() - 1)
     {
+        LocalOrientationLookupTable.clear();
+        LocalOrientationLookupTable = generateLocalLookupTable(waypointIndex, waypointIndex + 1, GlobalOrientationLookupTable, 100);
         StepCommandList stepCommands = GenerateHermitePath( //generate the path (in the form of a list of step commands for the robot to follow) to get from the current waypoint to the next waypoint
             waypoints[waypointIndex].position, 
             waypoints[waypointIndex + 1].position, 
             waypoints[waypointIndex].velocity, 
             waypoints[waypointIndex + 1].velocity,
-            0.05, //step length of the path (percentage of the path that each step is)
-            mtPolynomials[waypointIndex]); //polynomial describing the orientation of the robot as it moves
+            0.05, //step length of the path in parameter space
+            LocalOrientationLookupTable); //lookup table describing the orientation of the robot as it moves
 
         //execute the step command list to get from the current waypoint to the next waypoint
         int StepCommandCounter = -1; //this will keep track of which step commands have been executed and which have not
         while(StepCommandCounter < stepCommands.Steps.size() - 1){ //run until the path is fully executed
             StepCommandCounter++;
-            MotionStepCommand current_command(stepCommands.Steps[StepCommandCounter]);
+            MotionStepCommand current_command(stepCommands.Steps[StepCommandCounter]); //get the current step command
 
-            pivotWheels(current_command.Lpivot, current_command.Rpivot, 0.1);
-            rotateWheels(current_command.Lmove, current_command.Rmove, 10);
+            pivotWheels(current_command.Lpivot, current_command.Rpivot, 0.1); //steer the wheels to the correct angle
+            rotateWheels(current_command.Lmove, current_command.Rmove, 10); //rotate the wheels the correct distance
 
             pros::Task::delay(1);
         }
 
+        WaypointIndex++;
+
         pros::Task::delay(1);
     }
-
-    
-    
 }
 
 void autonomous(){
