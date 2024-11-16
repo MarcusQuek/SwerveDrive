@@ -74,22 +74,22 @@ void tareBaseMotorEncoderPositions() //tares all base motor encoder positions
 void clampVoltage(double lu, double ll, double ru, double rl)
 {
     //if any of lu, ll, ru or rl are too big, we need to scale them, and we must scale them all by the same amount so we dont throw off the proportions
-        if(fabs(lu) > MAX_VOLTAGE || fabs(ll) > MAX_VOLTAGE || fabs(ru) > MAX_VOLTAGE || fabs(rl) > MAX_VOLTAGE)
-        {
-            //figure out which of lu, ll, ru or rl has the largest magnitude
-            double max = fabs(lu);
-            if(max < fabs(ll))
-                max = fabs(ll);
-            if(max < fabs(ru))
-                max = fabs(ru);
-            if(max < fabs(rl))
-                max = fabs(rl);
-            double VoltageScalingFactor = max / MAX_VOLTAGE; //this will definitely be positive, hence it wont change the sign of lu, ll, ru or rl.
-            lu = lu / VoltageScalingFactor;
-            ll = ll / VoltageScalingFactor;
-            ru = ru / VoltageScalingFactor;
-            rl = rl / VoltageScalingFactor;
-        }
+    if(fabs(lu) > MAX_VOLTAGE || fabs(ll) > MAX_VOLTAGE || fabs(ru) > MAX_VOLTAGE || fabs(rl) > MAX_VOLTAGE)
+    {
+        //figure out which of lu, ll, ru or rl has the largest magnitude
+        double max = fabs(lu);
+        if(max < fabs(ll))
+            max = fabs(ll);
+        if(max < fabs(ru))
+            max = fabs(ru);
+        if(max < fabs(rl))
+            max = fabs(rl);
+        double VoltageScalingFactor = max / MAX_VOLTAGE; //this will definitely be positive, hence it wont change the sign of lu, ll, ru or rl.
+        lu = lu / VoltageScalingFactor;
+        ll = ll / VoltageScalingFactor;
+        ru = ru / VoltageScalingFactor;
+        rl = rl / VoltageScalingFactor;
+    }
 }
 double wrapAngle(double angle){ //forces the angle to be within the -180 < angle < 180 range
     if (angle > 180.0)
@@ -259,25 +259,6 @@ void moveBase(){
         r_fterm = (target_r-prev_target_r)*(r_kF/dt);
         target_v = target_v + v_fterm;
         target_r = target_r + r_fterm;
-        
-        /*
-        if(target_r.norm()<(MAX_ANGULAR*0.05) && current_angular>(MAX_ANGULAR*0.05)){
-            target_r = vector3D(0,0,-0.3*current_angular);
-        }
-        if(target_v.norm()<(MAX_SPEED*0.05) && current_tl_velocity.norm()>(MAX_SPEED*0.05)){
-            target_v = current_tl_velocity.scalar(0.1);
-
-        pros::lcd::print(1,"r_fterm %3.3f", r_fterm.z);
-        
-        pros::lcd::print(4, "la_target %3.3f", (l_error+left_angle));
-        pros::lcd::print(5, "ra_target %3.3f", (r_error+right_angle));
-
-        pros::lcd::print(6, "rot_v_y %3.8f", rotational_v_vector.y);
-        pros::lcd::print(7, "rot_v_x %3.8f", rotational_v_vector.x);
-
-        pros::lcd::print(2, "la %3.3f", left_angle);
-        pros::lcd::print(3, "ra %3.3f", right_angle);
-        }*/
 
         rotational_v_vector = L2I_pos^target_r; //cross product of L2I_pos (vector pointing to the left with a magnitude of WHEEL_BASE_RADIUS) and target_r
         
@@ -320,10 +301,9 @@ void moveBase(){
         current_l_tl_error = (v_left_velocity - current_l_velocity);
         current_r_tl_error = (v_right_velocity - current_r_velocity);
 
+        //calculate the PID output
         l_velocity_pid += left_velocity_PID.step(current_l_tl_error);
         r_velocity_pid += right_velocity_PID.step(current_r_tl_error);
-
-        //calculate the PID output
         l_angle_pid = left_angle_PID.step(l_error);
         r_angle_pid = right_angle_PID.step(r_error);
         //tuned value, reduces power output more when the wheel is facing a more incorrect way 
@@ -524,6 +504,67 @@ struct StepCommandList{ //contains the list of commands for the base to follow i
     std::vector<MotionStepCommand> Steps;
     double cax, cay, cbx, cby, ccx, ccy, cdx, cdy;
 };
+struct Waypoint{ //stores a waypoint of the auton path
+    vector3d position, velocity;
+    Waypoint(vector3d position, vector3d velocity)
+        : position(position), velocity(velocity) {}
+}
+
+std::vector<Waypoint> ImportWaypointConfig(String config)
+{
+    std::vector<Waypoint>& waypoints;
+    if (config.empty())
+        return;
+    std::string xValue, yValue, magnitude, direction;
+    size_t i = 0;
+    while (i < config.length()) {
+        try {
+            if (config[i] == 'x') {
+                i++; // skip over the x character
+                while (config[i] != 'y') {
+                    xValue += config[i];
+                    i++;
+                }
+            }
+            if (config[i] == 'y') {
+                i++; // skip over the y character
+                while (config[i] != 'v') {
+                    yValue += config[i];
+                    i++;
+                }
+            }
+            if (config[i] == 'v') {
+                i++; // skip over the v character
+                while (config[i] != 'θ') {
+                    magnitude += config[i];
+                    i++;
+                }
+            }
+            if (config[i] == 'θ') {
+                i++; // skip over the θ character
+                while (config[i] != '&') {
+                    direction += config[i];
+                    i++;
+                }
+            }
+            if (config[i] == '&') {
+                i++; // skip over the & character
+                waypoints.emplace_back( //construct a new waypoint and attach it to the back of the waypoints vector
+                    vector3d(std::stod(xValue) / 5, std::stod(yValue) / 5, 0),
+                    vector3d(std::stod(magnitude), std::stod(direction), 0)
+                );
+                // reset the strings to be ready to translate the next waypoint
+                xValue.clear();
+                yValue.clear();
+                magnitude.clear();
+                direction.clear();
+            }
+        } catch (const std::exception&) {
+            break;
+        }
+    }
+    return waypoints;
+}
 
 void GetNextStep(std::vector<MotionStepCommand>& Steps, vector3D NewRobotPosition, double NewRobotOrientation, vector3D PreviousLeftWheelPosition, vector3D PreviousRightWheelPosition) {
     //apply definition of L(t) and R(t) to get current left and right wheel position
@@ -584,23 +625,42 @@ StepCommandList GenerateHermitePath(vector3D pStart, vector3D pEnd, vector3D vSt
 }
 
 void move_auton(){ //execute full auton path
-    //give it a big list of paths
-    //each path is gonna have its own step command list
-    //we have to execute them all
+    //convert the config string into a big list of waypoints
+    std::vector<Waypoint> waypoints = ImportWaypointConfig("");
+    std::vector<std::array<double, 5>> mtPolynomials = {
+        {1.0, 2.0, 3.0, 4.0, 5.0}, //mt polynomial coefficients for the orientation of the robot when going from the first to the second waypoint
+        {4.0, 5.0, 6.0, 7.0, 8.0}, //mt polynomial coefficients for the orientation of the robot when going from the second to the third waypoint
+        {7.0, 8.0, 9.0, 10.0, 11.0}
+    };
 
-    StepCommandList stepCommands = GenerateHermitePath(start_pos, delta, start_velocity, velocity, 100, mt); //generate the list of step commands for the robot to follow to produce the path
+    int waypointIndex = 0;
+    while(waypointIndex < waypoints.size() - 1)
+    {
+        StepCommandList stepCommands = GenerateHermitePath( //generate the path (in the form of a list of step commands for the robot to follow) to get from the current waypoint to the next waypoint
+            waypoints[waypointIndex].position, 
+            waypoints[waypointIndex + 1].position, 
+            waypoints[waypointIndex].velocity, 
+            waypoints[waypointIndex + 1].velocity,
+            0.05, //step length of the path (percentage of the path that each step is)
+            mtPolynomials[waypointIndex]); //polynomial describing the orientation of the robot as it moves
 
-    int StepCommandCounter = -1; //this will keep track of which step commands have been executed and which have not
-    
-    while(StepCommandCounter < stepCommands.Steps.size() - 1){ //run until the path is fully executed
-        StepCommandCounter++;
-        MotionStepCommand current_command(stepCommands.Steps[StepCommandCounter]);
+        //execute the step command list to get from the current waypoint to the next waypoint
+        int StepCommandCounter = -1; //this will keep track of which step commands have been executed and which have not
+        while(StepCommandCounter < stepCommands.Steps.size() - 1){ //run until the path is fully executed
+            StepCommandCounter++;
+            MotionStepCommand current_command(stepCommands.Steps[StepCommandCounter]);
 
-        pivotWheels(current_command.Lpivot, current_command.Rpivot, 0.1);
-        rotateWheels(current_command.Lmove, current_command.Rmove, 10);
+            pivotWheels(current_command.Lpivot, current_command.Rpivot, 0.1);
+            rotateWheels(current_command.Lmove, current_command.Rmove, 10);
+
+            pros::Task::delay(1);
+        }
 
         pros::Task::delay(1);
     }
+
+    
+    
 }
 
 void autonomous(){
