@@ -120,19 +120,19 @@ vector3D target_r;
 vector3D temp;
 vector3D v_right;
 vector3D v_left;
-double theta; // angle between direction vector and robot right, rads
+double theta; // angle between direction vector and robot right, radians
 
-const double angle_kP = 28.0;   //swerve wheel rotation
+const double angle_kP = 28.0;   //swerve wheel pivoting
 const double angle_kI = 0.00;
 const double angle_kD = 5000.0;
 
-const double position_kP = 28.0; //position PID to get the robot to move the correct distance by PIDing the velocities
-const double position_kI = 0.0;
-const double position_kD = 5000.0;
+const double distance_kP = 28.0; //swerve wheel rotation distance
+const double distance_kI = 0.0;
+const double distance_kD = 5000.0;
 
-const double MAX_VOLTAGE = 12000;
+const double MAX_VOLTAGE = 127;
 
-const double velocity_kP = 0.002;   //swerve wheel power
+const double velocity_kP = 0.002;   //swerve wheel rotation velocity
 const double velocity_kI = 0.000;
 const double velocity_kD = 160.0;
 
@@ -142,7 +142,7 @@ const double v_kF = 0.3;    //feedforward compensation for translation
 const double scale  = 30.0;
 const double base_v = 0.7; //this defines the min power of the robot when scaling its power down for each side when the wheels are aiming the wrong way
 
-
+const double ticks_per_mm = 220 / 360 * 600; //convert mm to ticks
 
 
 double target_angle = 0.0;
