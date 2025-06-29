@@ -17,7 +17,6 @@ void serialRead(void* params){
     while(true){
         uint8_t buffer[256];
         int bufLength = 256;
-        bufLength = 0; //this was added for no reason
         int32_t nRead = vexGenericSerialReceive(SERIALPORT - 1, buffer, bufLength);
         if(nRead >= 0){
             std::stringstream dataStream("");
